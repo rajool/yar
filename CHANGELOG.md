@@ -16,6 +16,23 @@ only when it is bumped.
   lives in this changelog. Tags and releases restart at `v2.8.0`.
 - Development paths in the README point at `~/Projects/Plugins/yar`.
 
+## [2.9.0] - 2026-06-10
+
+### Added
+
+- **`daily-sync` skill** (`/yar:daily-sync`) — one start-of-day and one end-of-day
+  move that syncs **every** local git repo and installed plugin at once. A morning
+  greeting ("good morning") scans read-only, then fast-forward/rebase-pulls every repo
+  and worktree and refreshes all plugins (`marketplace update` + a per-plugin `update`
+  loop). An evening greeting ("good night") pushes all committed work, rebases and
+  surfaces diverged history or conflicts, offers to commit dirty trees (never
+  discarding them), and sweeps merged/`gone` worktrees and their branches — so local
+  and remote end identical, with anything unreconcilable surfaced rather than
+  destroyed. Always plans before mutating and confirms hard-to-reverse steps (commits,
+  force-with-lease pushes, worktree removal); leans on `git-workflow` for the per-repo
+  mechanics. Bundles `scripts/scan-repos.sh`, a read-only multi-repo status scanner,
+  and a `reference/playbook.md` decision matrix.
+
 ## [2.8.0] - 2026-06-09
 
 ### Added
@@ -282,5 +299,6 @@ invoked — the major bump marks the structural, tooling, and presentation miles
 - `git-workflow` skill with the `git-guard` and `branch-guard` Claude Code hooks,
   the git-level `pre-commit` guard, and the `/yar:install-guards` command.
 
-[Unreleased]: https://github.com/rajool/yar/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/rajool/yar/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/rajool/yar/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/rajool/yar/releases/tag/v2.8.0
