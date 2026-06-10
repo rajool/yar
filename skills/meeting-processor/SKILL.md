@@ -205,6 +205,7 @@ Permanent instead of Trash: pass `--hard` (or set `MEETING_DELETE_HARD=1`) — g
 - [ ] Conditional framing preserved — don't turn "if X then Y" into a firm decision, or a suggestion into an instruction.
 - [ ] Ownership correct — who said / agreed to / asked for what (don't conflate reported-vs-asked).
 - [ ] Ambiguous speaker? Show the user one representative quote per unknown speaker to identify, rather than guessing from an attendee list.
+- [ ] No invented entities — never turn an ambiguous or garbled transcript token into a named person, vendor, advisor, or tool. STT routinely mishears ordinary words as proper names; if an entity can't be independently confirmed (the project's people map, prior docs, or the user), flag it as uncertain or drop it — never assert it as fact in a summary, decision, task, or email.
 - [ ] Summary written in the meeting's language; verbatim transcript kept in the spoken language; neither silently translated.
 - [ ] Routing is opt-in and confirmed — only formal decisions go to the official record; only firm commitments become tasks/events.
 - [ ] Processing ledger written and current — every stage marked `done` / `pending` / `skipped` / `n/a`; nothing reads `done` that wasn't actually done, and no `pending` was quietly hidden as `n/a`.
