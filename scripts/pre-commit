@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# pre-commit — backstop git hook on *any* commit path
+# (Claude, terminal, GUI) — because git itself runs it, not only Claude Code.
+# If a binary or secret file is staged, it rejects the commit (exit 1).
+# Note: macOS's native bash is version 3.2; so we don't use mapfile (bash4+).
+# Deliberate bypass (rare): git commit --no-verify
+set -uo pipefail
+
+# Only added/modified/copied/renamed files (not deletions); NUL-delimited for names with spaces.
+staged=()
+while IFS= read -r -d '' f; do
+  staged+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+[ "${#staged[@]}" -eq 0 ] && exit 0
+
+bin_re='\.(pdf|jpe?g|png|gif|webp|bmp|tiff?|heic|heif|mp3|m4a|aac|flac|wav|mp4|mov|avi|mkv|webm|docx?|xlsx?|pptx?|odt|ods|odp|woff2?|ttf|otf|eot|zip|tar|gz|tgz|bz2|rar|7z|p12|pfx|jar|so|dylib|dll|exe)$'
+secret_re='(\.env$|(^|/)\.env\.[^/]*$|.*\.key$|.*\.pem$|.*\.p12$|.*\.pfx$|.*credential.*|.*\.secret$|(^|/)id_rsa.*|.*service[-_]?account.*\.json$)'
+env_example_re='(^|/)\.env\.example$'
+
+bad=()
+for f in "${staged[@]}"; do
+  shopt -s nocasematch
+  if [[ "$f" =~ $env_example_re ]]; then
+    shopt -u nocasematch
+    continue
+  fi
+  if [[ "$f" =~ $bin_re || "$f" =~ $secret_re ]]; then
+    bad+=("$f")
+  fi
+  shopt -u nocasematch
+done
+
+if [ "${#bad[@]}" -gt 0 ]; then
+  {
+    echo "⛔ Commit stopped — only text/code/Markdown is allowed (policy: no binaries/secrets in git)."
+    printf '   • %s\n' "${bad[@]}"
+    echo "   Binary → external storage (not git) · secret → .env (which is in .gitignore)."
+    echo "   Unstage: git restore --staged <file>"
+    echo "   Deliberate bypass (rare): git commit --no-verify"
+    echo "   — blocked by pre-commit: no binaries/secrets in git."
+  } >&2
+  exit 1
+fi
+exit 0

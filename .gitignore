@@ -1,0 +1,21 @@
+.DS_Store
+
+# meeting-recorder: compiled binary (source in recorder/ is committed; the build is local, per-machine)
+skills/meeting-recorder/bin/
+
+# context-guard: local, project-specific private-term denylist (never committed)
+.claude/hooks/context-denylist.local.txt
+
+# Personal Claude Code settings (machine-local — keep out of git)
+.claude/settings.local.json
+
+# Secrets / API keys — keep real keys in a gitignored .env; .env.example is fine to commit
+.env
+.env.*
+!.env.example
+
+# Local output directories the skills may write into when dogfooded inside this repo
+recordings/
+transcripts/
+meetings/
+reports/

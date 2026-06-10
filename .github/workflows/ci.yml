@@ -1,0 +1,75 @@
+name: CI
+
+# Quality gates for the plugin: lint + test the guard scripts, validate the
+# manifests, and dogfood the skill validator. The no-context merge gate lives in
+# its own workflow (no-context.yml).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Lint & test (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install Ruff
+        run: python -m pip install --upgrade "ruff==0.15.15"
+      - name: Ruff (lint)
+        run: ruff check .
+      - name: Unit & integration tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate JSON manifests
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1])); print(sys.argv[1], 'ok')" "$f"
+          done
+      - name: Validate skills (dogfood validate.py)
+        run: |
+          status=0
+          for d in skills/*/; do
+            python3 skills/skill-builder/scripts/validate.py "$d" || status=1
+          done
+          exit $status
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install ShellCheck (pinned to match local dev)
+        run: python -m pip install --upgrade "shellcheck-py==0.11.0.1"
+      - name: Run ShellCheck
+        run: shellcheck $(git ls-files '*.sh') scripts/pre-commit
+
+  markdownlint:
+    name: Markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20"
+      - name: Run markdownlint
+        run: npx --yes markdownlint-cli2

@@ -1,0 +1,17 @@
+name: no-context
+
+# Keep the public yar repo generic: fail the check (which blocks merge when the branch
+# is protected) if any tracked file carries private / context-specific content.
+# Detection lives in .claude/hooks/context-guard.py (shared with the local PreToolUse hook).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Scan for private / context-specific content
+        run: python3 .claude/hooks/context-guard.py --all

@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a problem with a yar skill, agent, or guard
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please keep this report **generic** — no secrets, private paths, or personal data (yar is a public repo).
+  - type: input
+    id: version
+    attributes:
+      label: yar version
+      description: From `.claude-plugin/plugin.json` or the `/plugin` manager.
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - git-workflow
+        - gemini-research
+        - skill-builder
+        - organize-files
+        - meeting-recorder
+        - meeting-processor
+        - a guard (git / branch / perms / pre-commit)
+        - install-guards / install-perms
+        - other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Claude Code version, shell.
+      placeholder: "macOS 14.5, Claude Code 2.1.x, zsh"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for a duplicate.
+          required: true
+        - label: This report contains no secrets or private content.
+          required: true

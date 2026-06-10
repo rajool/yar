@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>MeetingRecorder</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.yar.meetingrecorder</string>
+  <key>CFBundleName</key>
+  <string>MeetingRecorder</string>
+  <key>CFBundleDisplayName</key>
+  <string>Meeting Recorder</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.4</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Meeting Recorder records your microphone so your own voice is included in the meeting recording.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Meeting Recorder captures the meeting audio you hear (the other participants) so the full conversation can be transcribed.</string>
+</dict>
+</plist>
