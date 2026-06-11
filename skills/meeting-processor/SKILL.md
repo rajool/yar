@@ -53,6 +53,14 @@ Detect which you have:
 3. **Existing transcript** (a `.md`/`.txt`, or pasted text) → skip to step 1.
 
 ### A) Local audio/video → transcribe with ElevenLabs Scribe v2
+
+**First, derive this meeting's transcription inputs from the current project's context — don't hardcode them, and rebuild them every run (they drift).** Read the project's own context (its `CLAUDE.md`, a context doc or context plugin the project declares, the calendar invite, or an attendee list), then pass both of these for that single run:
+
+- **`ELEVENLABS_LANG`** — the meeting's spoken language as an ISO-639-3 code (e.g. `eng`, `fas`, `spa`) whenever the context makes it knowable. Pin it instead of relying on auto-detect — it measurably improves accuracy.
+- **`ELEVENLABS_KEYTERMS`** — the proper nouns this recording will contain (attendee names, product/feature names, project codenames, domain jargon). The single biggest accuracy win: unfamiliar names otherwise get garbled.
+
+This matters most for non-English and domain-heavy audio.
+
 ```bash
 "${CLAUDE_PLUGIN_ROOT}/skills/meeting-processor/scripts/transcribe-video.sh" "<path-to-file>" [output_path] [num_speakers]
 ```
@@ -60,8 +68,8 @@ The script: extracts audio with ffmpeg (mono mp3) → sends one call to ElevenLa
 
 Knobs (environment variables — all optional):
 - `ELEVENLABS_API_KEY` — **required for transcription.** Resolved from env → `$PWD/.claude/settings.local.json` (`.env.ELEVENLABS_API_KEY`) → `$PWD/.env`. Get one at [elevenlabs.io](https://elevenlabs.io).
-- `ELEVENLABS_LANG` — ISO-639-3 hint (e.g. `eng`, `fas`, `spa`). Default: empty → Scribe auto-detects. Set it when you know the language and want maximum accuracy.
-- `ELEVENLABS_KEYTERMS` — comma-separated proper nouns to bias toward (e.g. `"Acme,Jane Doe,Project Atlas"`) so domain names don't get garbled. Default: none.
+- `ELEVENLABS_LANG` — ISO-639-3 hint (e.g. `eng`, `fas`, `spa`). Default: empty → Scribe auto-detects. **Derive it from the current project's context each run (see above)** and set it whenever the language is knowable, for maximum accuracy.
+- `ELEVENLABS_KEYTERMS` — comma-separated proper nouns to bias toward (e.g. `"Acme,Jane Doe,Project Atlas"`) so domain names don't get garbled. **Build this fresh from the current project's context each run (see above) — never hardcode it.** Default: none.
 - 3rd arg `num_speakers` — pass the expected count (e.g. `5`) for sharper diarization; otherwise auto-detect.
 
 Pre-reqs: `ffmpeg`, `curl`, `jq` (`brew install ffmpeg jq`).
