@@ -12,6 +12,6 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Scan for private / context-specific content
         run: python3 .claude/hooks/context-guard.py --all
