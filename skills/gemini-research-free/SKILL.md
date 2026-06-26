@@ -19,7 +19,13 @@ For a quick/small research you can call the wrapper directly with a long timeout
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/skills/gemini-research-free/scripts/gemini-research.sh" "<full question>" /tmp/gemini-research-out.md   # Bash timeout ≈ 600000ms
 ```
-Then read `/tmp/gemini-research-out.md`.
+Then read `/tmp/gemini-research-out.md`. The script's progress/errors go to **stderr** (which model it used, fallbacks, success/fail) — read those to know what happened.
+
+### Models, quota, and failing fast (read this — 2026)
+- The free tier gives **`gemini-2.5-pro` a quota of `limit: 0`** — calling pro fails instantly (`Quota exceeded … limit: 0` → `unexpected critical error`). **Never default to pro on the free tier.**
+- The wrapper therefore **ladders `gemini-2.5-flash` → `gemini-2.5-flash-lite`**, **time-boxes** each attempt (`GEMINI_TIMEOUT`, default 420s), and **fails fast** with an actionable message instead of hanging. `flash`/`flash-lite` have **daily caps that reset ~midnight Pacific**; web grounding can also 429.
+- Overrides: `GEMINI_MODEL=gemini-2.5-flash-lite` pins the lightest model; `GEMINI_TIMEOUT=<sec>` adjusts the per-attempt cap.
+- **If it still fails** (all free models capped): use the paid skill `boote:gemini-research-paid` (billed Gemini API key) or fall back to Claude's own `/deep-research`. Don't keep retrying a quota-blocked model — that's the trap that wastes time.
 
 ## 2) Save the report
 Save it to `reports/YYYY-MM-DD_<slug>.md` (or wherever the project keeps research notes). Use an absolute date. Structure: a **Summary** (TL;DR), the body with source markers, and a **Sources** section with full URLs. At the top, note the topic and `Source: Gemini deep research — <date>`.
