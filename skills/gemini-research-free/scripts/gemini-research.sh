@@ -83,7 +83,7 @@ SCRATCH="$(mktemp -d)"
 TMP_OUT="$(mktemp)"
 TMP_ERR="$(mktemp)"
 trap 'rm -rf "$SCRATCH" "$TMP_OUT" "$TMP_ERR"' EXIT
-cd "$SCRATCH"
+cd "$SCRATCH" || exit 1
 
 FATAL_OUT='An unexpected critical error occurred'
 QUOTA_RE='Quota exceeded for metric|RESOURCE_EXHAUSTED|limit: 0|status.?429|Too Many Requests|429 '
