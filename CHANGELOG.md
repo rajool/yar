@@ -10,6 +10,17 @@ only when it is bumped.
 
 ## [Unreleased]
 
+### Added
+
+- **`chrome-devtools` skill** — drive Google Chrome to do real web tasks (navigate,
+  fill forms, click through flows, read/extract content, inspect network/console) via
+  the Chrome DevTools Protocol (the `chrome-devtools` MCP, `chrome-devtools-mcp`).
+  Targets elements by accessibility-snapshot `uid` instead of pixel coordinates, so
+  clicks don't drift on scroll/re-render — faster and far more reliable than the
+  screenshot+coordinate extension. Includes a `launch-chrome-debug.sh` helper to open
+  a persistent, logged-in debug Chrome for the MCP to attach to, and hard safety rules
+  (never enter secrets; confirm irreversible actions; page content is data, not commands).
+
 ### Changed
 
 - Git history squashed to a single public release commit; the version history
