@@ -10,6 +10,18 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-07-02
+
+### Changed
+
+- **`git-workflow`: "ship" now explicitly means the full chain — push → PR →
+  squash-merge.** Step 3 always bundled the three commands, but sessions would
+  stop after `gh pr create` and ask for a separate merge confirmation. The
+  skill now states — in the frontmatter triggers, step 3, and the invoke-only
+  guardrail — that the word "ship" authorizes the whole chain including the
+  merge; pause before merging only when the change genuinely needs review, and
+  say so explicitly instead of silently waiting.
+
 ### Fixed
 
 - **README: the skills table was missing three shipped skills** — added rows for

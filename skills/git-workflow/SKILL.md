@@ -1,6 +1,6 @@
 ---
 name: git-workflow
-description: A git branch-and-merge workflow for small teams coding with Claude Code — short-lived feature branches off main, conventional commits, a pull request the author squash-merges (no required approval), and one git worktree per parallel session so concurrent sessions never collide. Runs only when you invoke it; it does not auto-branch, auto-push, or auto-merge on its own. Use when you ask to start new work, create a branch, commit changes, sync or rebase on main, open or merge a pull request, resolve a merge conflict, run parallel Claude sessions, or clean up branches and worktrees. Triggers include "create a branch", "start a new task", "open a PR", "merge this", "ship/land this", "sync with main", "resolve conflict", "set up a worktree".
+description: A git branch-and-merge workflow for small teams coding with Claude Code — short-lived feature branches off main, conventional commits, a pull request the author squash-merges (no required approval), and one git worktree per parallel session so concurrent sessions never collide. Runs only when you invoke it; it does not auto-branch, auto-push, or auto-merge on its own. Use when you ask to start new work, create a branch, commit changes, sync or rebase on main, open or merge a pull request, resolve a merge conflict, run parallel Claude sessions, or clean up branches and worktrees. Triggers include "create a branch", "start a new task", "open a PR", "merge this", "ship/land this", "sync with main", "resolve conflict", "set up a worktree". "Ship" is a single command for the whole chain — commit if needed, push, open the PR, and squash-merge it — not just opening a PR.
 ---
 
 # git-workflow — git branch and merge workflow
@@ -52,6 +52,7 @@ git push -u origin HEAD                      # push the branch up
 gh pr create --fill                          # or with a custom title/body
 gh pr merge --squash --delete-branch         # merge it yourself — don't wait for approval
 ```
+- **"Ship" = this entire chain, one command:** push → open the PR → squash-merge → offer cleanup. Do **not** stop after `gh pr create` and come back asking "merge it?" — the word "ship" already authorized the merge (added 2026-07-02 after a "shipped" PR sat unmerged waiting on an unnecessary confirmation). Pause before the merge only when the change genuinely needs review or discussion — and say so explicitly instead of silently waiting.
 - **No required approval:** everyone squash-merges their **own** PR. Others' review is welcome but never a blocker.
 - **Why squash:** each PR becomes one clean commit on `main`; history stays readable.
 - Before merging, make sure the branch is up to date with `main` (step 2) so the merge is conflict-free.
@@ -83,7 +84,7 @@ git branch -D <branch>
 - **One worktree per session** whenever you can't be certain you're the only session in this folder — a shared checkout means a shared index, and that is what cross-contaminates commits. A branch isolates history; a worktree isolates the index/files.
 - The bundled hooks stay in place: no `git add -A`/`commit -a` (git-guard), no edits on `main` (branch-guard), no binaries/secrets (pre-commit). Binary → external storage (not git), secret → `.env` (gitignored). Rare overrides: `GIT_GUARD=off`, `BRANCH_GUARD=off`, or `git commit --no-verify`.
 - Stage only this session's own files with explicit paths, **commit by pathspec** (`git commit -m "…" -- <paths>`), and **verify ownership before each commit** (`git diff --cached --name-only`): commit only files you changed this session; leave any other session's changes — staged or unstaged — exactly as they are. In an isolated worktree the collision risk is zero (these pass trivially); they matter most when sessions **share one checkout**.
-- **Invoke-only:** this skill does not branch, push, open, or merge a PR on its own — it runs the steps when you ask.
+- **Invoke-only:** this skill does not branch, push, open, or merge a PR on its own — it runs the steps when you ask. When the ask is "ship", the whole of step 3 — squash-merge included — is what was invoked; don't re-confirm the merge separately.
 
 ## References
 - `reference/worktrees.md` — parallel Claude sessions with git worktree (setup, `.worktreeinclude`, rebase not merge, post-merge cleanup + the merged-worktree sweep, the practical 2–4 session ceiling). **Read it when working in parallel.**
