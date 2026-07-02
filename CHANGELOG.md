@@ -10,6 +10,24 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-07-02
+
+### Added
+
+- **`daily-log`: a project-agnostic end-of-day personal retro engine.** Five
+  conversational questions (today's work, decisions, energy/focus 1-10, concerns,
+  tomorrow's single top priority) captured as one dated Markdown file per day with
+  a stable structure, so weeks of logs can later be mined for patterns (energy
+  trends, recurring concerns). Supports an optional strictly read-only evening
+  dashboard (tasks completed today, overdue deadlines, tomorrow's calendar) when
+  the calling project wires in sources. The engine is deliberately generic: the
+  caller supplies the context layer — log directory, dashboard sources, decision
+  store, concern routing, and conversation language. Special behaviors: a tired
+  user gets a 3-line short log, a multi-day energy slump or a concern recurring
+  across 3+ logs gets flagged, and a latent "I've decided…" mid-chat triggers an
+  offer to record the decision formally. Distinct from `daily-sync`, which owns
+  end-of-day *repo/plugin* syncing.
+
 ## [2.11.0] - 2026-07-02
 
 ### Added
