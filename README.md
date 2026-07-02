@@ -80,7 +80,7 @@ Some environments don't expose the `/plugin` slash command. Add the block below 
 | [`meeting-recorder`](skills/meeting-recorder/SKILL.md) | `/yar:meeting-recorder` | **macOS only.** Record a call as a small audio-only `.m4a` via a self-built CoreAudio process-tap recorder — no third-party app. Captures both the other participants and your mic, then hands off to `meeting-processor`. |
 | [`meeting-processor`](skills/meeting-processor/SKILL.md) | `/yar:meeting-processor` | Turn a recording or transcript into a clean summary with decisions and action items (owner / deadline / priority), then optionally route them into the project's own tools (tasks, calendar, decisions record, docs, follow-up email). Tracks a per-meeting **processing ledger** so "review the meetings" shows what's done vs. still pending. Transcribes with **ElevenLabs Scribe v2**. Needs `ELEVENLABS_API_KEY` only when transcribing. |
 
-Two manual install commands ship as skills too: [`install-guards`](skills/install-guards/SKILL.md) (`/yar:install-guards`) and [`install-perms`](skills/install-perms/SKILL.md) (`/yar:install-perms`) — see [Guardrails & permissions](#guardrails--permissions).
+Three manual install commands ship as skills too: [`install-guards`](skills/install-guards/SKILL.md) (`/yar:install-guards`) and [`install-perms`](skills/install-perms/SKILL.md) (`/yar:install-perms`) — see [Guardrails & permissions](#guardrails--permissions) — plus [`install-rtl`](skills/install-rtl/SKILL.md) (`/yar:install-rtl`), which teaches the machine's **global** `~/.claude/CLAUDE.md` to render Persian/RTL chat replies correctly: the whole reply as an RTL HTML widget card when a widget tool exists, atomic LTR isolation for paths/URLs, English-only plain chat text (intros, status notes, closings), and a structurally BiDi-safe fallback for plain CLI. Once per machine, idempotent (a managed marker block), re-run to receive rule upgrades.
 
 ### Agents
 
@@ -145,7 +145,7 @@ yar/
 ├── skills/                # one folder per skill (SKILL.md + reference/scripts/assets)
 │   ├── git-workflow/      #   git-workflow · gemini-research-free · skill-builder ·
 │   ├── …                  #   organize-files · meeting-recorder · meeting-processor ·
-│   └── install-perms/     #   install-guards · install-perms (manual, disable-model-invocation)
+│   └── install-perms/     #   install-guards · install-perms · install-rtl (manual, disable-model-invocation)
 ├── agents/                # file-inspector · gemini-researcher
 ├── hooks/hooks.json       # git-guard + perms-guard + branch-guard wiring
 ├── scripts/               # guard scripts + installers (pre-commit, perms)

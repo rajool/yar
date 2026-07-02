@@ -10,6 +10,26 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-07-02
+
+### Added
+
+- **`install-rtl`: one command to make Persian/RTL chat replies render like a
+  human wrote them.** `/yar:install-rtl` installs a battle-tested rendering rule
+  into the machine's **global** `~/.claude/CLAUDE.md` (honors
+  `CLAUDE_CONFIG_DIR`), inside a managed marker block — idempotent, re-run to
+  receive rule upgrades, everything outside the block untouched. The rule fixes
+  the BiDi scrambling that LTR chat clients inflict on mixed Persian-English
+  replies (trailing periods jumping to the head of the line, Latin tokens
+  reordering, numeric ranges flipping): render the **entire** reply as one RTL
+  HTML widget card when an inline widget tool exists; wrap neutral-edged tokens
+  (file paths, URLs, CLI commands) in an atomic `inline-block` LTR span; keep
+  **all** plain chat text outside cards — intros, status notes between tool
+  calls, closings — in English (even a 100%-pure-Persian sentence scrambles);
+  and fall back to structurally BiDi-safe plain text on widget-less CLIs.
+  Unicode isolates and transliteration were tested and rejected. Every clause
+  corresponds to a scrambling observed in the wild on 2026-07-01/02.
+
 ## [2.12.0] - 2026-07-02
 
 ### Added
