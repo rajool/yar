@@ -37,6 +37,11 @@
 #                        empty → Scribe auto-detects the language.
 #   ELEVENLABS_KEYTERMS  comma-separated proper nouns to bias toward (e.g.
 #                        "Acme,Jane Doe,Project Atlas"). Default: none.
+#   GEMINI_API_KEY       optional. Enables the automatic FALLBACK engine
+#                        (transcribe-gemini.sh) when ElevenLabs is unreachable
+#                        (HTTP 000/403 — some networks' exit IPs are blocked at
+#                        ElevenLabs' edge), out of quota (429), or down (5xx).
+#                        Resolved from the same three places as the main key.
 #   MEETING_TRANSCRIPT_DIR  output directory (default: $PWD/transcripts)
 #
 # Requirements: ffmpeg (audio extraction), curl, jq.
@@ -93,6 +98,28 @@ EOF
 err() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "$*" >&2; }
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# A Gemini key anywhere (env → settings.local.json → .env) enables the fallback
+# engine (transcribe-gemini.sh) when ElevenLabs is unreachable or out of quota.
+gemini_key_available() {
+  [ -n "${GEMINI_API_KEY:-}" ] && return 0
+  if [ -f "$PWD/.claude/settings.local.json" ]; then
+    [ -n "$(jq -r '.env.GEMINI_API_KEY // empty' "$PWD/.claude/settings.local.json" 2>/dev/null || true)" ] && return 0
+  fi
+  if [ -f "$PWD/.env" ]; then
+    grep -qE '^GEMINI_API_KEY=.+' "$PWD/.env" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+fallback_to_gemini() {
+  log ""
+  log "==> Falling back to the Gemini engine: $1"
+  log "    (diarization will be approximate — resolve speaker identities from content)"
+  exec "$SCRIPT_DIR/transcribe-gemini.sh" "$INPUT" "$OUT_PATH" "$NUM_SPEAKERS"
+}
+
 # ---------- Parse args ----------
 [ "$#" -ge 1 ] || usage
 INPUT="$1"
@@ -111,7 +138,12 @@ fi
 if [ -z "${ELEVENLABS_API_KEY:-}" ] && [ -f "$PWD/.env" ]; then
   ELEVENLABS_API_KEY="$(grep -E '^ELEVENLABS_API_KEY=' "$PWD/.env" 2>/dev/null | head -1 | cut -d '=' -f2- || true)"
 fi
-[ -n "${ELEVENLABS_API_KEY:-}" ] || err "ELEVENLABS_API_KEY not set (env, .claude/settings.local.json, or .env)"
+if [ -z "${ELEVENLABS_API_KEY:-}" ]; then
+  if gemini_key_available; then
+    fallback_to_gemini "ELEVENLABS_API_KEY not set, but a GEMINI_API_KEY is available"
+  fi
+  err "ELEVENLABS_API_KEY not set (env, .claude/settings.local.json, or .env) — and no GEMINI_API_KEY for the fallback engine"
+fi
 
 # ---------- Input resolution ----------
 FILE_PATH=""
@@ -204,13 +236,31 @@ else
   log "      keyterms: none"
 fi
 
-# Capture HTTP status code separately by writing body to file
-HTTP_STATUS=$(curl -w "%{http_code}" -o "$RESPONSE_FILE" "${CURL_ARGS[@]}")
+# Capture HTTP status code separately by writing body to file.
+# A transport failure (no connection at all) must not kill the script here —
+# it is a fallback trigger, so map it to status 000.
+HTTP_STATUS=$(curl -w "%{http_code}" -o "$RESPONSE_FILE" "${CURL_ARGS[@]}") || HTTP_STATUS="000"
 
 if [ "$HTTP_STATUS" != "200" ]; then
   log "      HTTP $HTTP_STATUS"
-  cat "$RESPONSE_FILE" >&2
-  err "ElevenLabs API returned HTTP $HTTP_STATUS"
+  cat "$RESPONSE_FILE" >&2 2>/dev/null || true
+  # Transport/access failures → try the fallback engine if a Gemini key exists:
+  #   000 = no connection · 403 = ElevenLabs' edge blocks this exit IP
+  #   (datacenter/VPN — even keyless requests get 403) · 429 = quota
+  #   exhausted · 5xx = service down.
+  # Config errors (400/401/422) stay fatal: falling back would mask a bug the
+  # user should fix (bad key, bad request).
+  case "$HTTP_STATUS" in
+    000|403|429|5??)
+      if gemini_key_available; then
+        fallback_to_gemini "ElevenLabs API unreachable/refused (HTTP $HTTP_STATUS)"
+      fi
+      err "ElevenLabs API returned HTTP $HTTP_STATUS (no GEMINI_API_KEY available for the fallback engine)"
+      ;;
+    *)
+      err "ElevenLabs API returned HTTP $HTTP_STATUS"
+      ;;
+  esac
 fi
 
 # Check for error in body

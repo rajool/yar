@@ -1,11 +1,11 @@
 ---
 name: meeting-processor
-description: Turn a meeting recording or transcript into a clean Markdown summary — narrative, decisions, and action items (owner, deadline, priority) — then optionally route the outputs into the project's own tools: a task per action item, calendar events, formal decisions to a decisions record, per-person/project notes, status flags, and a follow-up email. Transcribes audio/video locally with ElevenLabs Scribe v2 (speaker diarization, any language) and keeps a verbatim transcript in the spoken language. Tracks a per-meeting processing ledger in the summary frontmatter — every stage from transcript through follow-up email — so "review the meetings" shows what is done vs. still pending per meeting. Deletes the source recording after the transcript and summary are saved (MEETING_DELETE_SOURCE). Use when asked to "process this meeting", "summarize this recording", "extract action items", "review the meetings", or after the meeting-recorder skill produces a file. Needs ELEVENLABS_API_KEY only when transcribing.
+description: Turn a meeting recording or transcript into a clean Markdown summary — narrative, decisions, and action items (owner, deadline, priority) — then optionally route the outputs into the project's own tools: a task per action item, calendar events, formal decisions to a decisions record, per-person/project notes, status flags, and a follow-up email. Transcribes audio/video locally with ElevenLabs Scribe v2 (speaker diarization, any language) and keeps a verbatim transcript in the spoken language. Tracks a per-meeting processing ledger in the summary frontmatter — every stage from transcript through follow-up email — so "review the meetings" shows what is done vs. still pending per meeting. Deletes the source recording after the transcript and summary are saved (MEETING_DELETE_SOURCE). Use when asked to "process this meeting", "summarize this recording", "extract action items", "review the meetings", or after the meeting-recorder skill produces a file. Transcribing needs ELEVENLABS_API_KEY or GEMINI_API_KEY.
 ---
 
 # meeting-processor — transcribe + summarize + extract action items + route
 
-Goal: take a meeting **recording** (audio/video) or an **existing transcript** and produce a clean, structured Markdown summary — narrative summary, decisions, action items with owners/deadlines/priority, and open questions — then **route** those outputs into the tools the project already uses (task system, calendar, decisions record, status docs). The transcription engine is **ElevenLabs Scribe v2** (high-accuracy batch STT with speaker diarization, any language).
+Goal: take a meeting **recording** (audio/video) or an **existing transcript** and produce a clean, structured Markdown summary — narrative summary, decisions, action items with owners/deadlines/priority, and open questions — then **route** those outputs into the tools the project already uses (task system, calendar, decisions record, status docs). The transcription engine is **ElevenLabs Scribe v2** (high-accuracy batch STT with speaker diarization, any language), with an automatic **Gemini fallback** for networks where ElevenLabs is unreachable.
 
 **This skill is invoke-only** and project-agnostic — it makes no assumptions about your repo layout. It writes **one summary file** (plus the verbatim transcript) and never scatters content into opinionated folders. Routing is **opt-in and caller-driven**: the skill extracts a clean structure and *offers* to route it into whatever you already have; it asks before any outbound write and invents no tools or destinations of its own. The caller (a project's CLAUDE.md, another skill, or the user) supplies the task system, people map, decisions record, and status docs.
 
@@ -70,9 +70,13 @@ Knobs (environment variables — all optional):
 - `ELEVENLABS_API_KEY` — **required for transcription.** Resolved from env → `$PWD/.claude/settings.local.json` (`.env.ELEVENLABS_API_KEY`) → `$PWD/.env`. Get one at [elevenlabs.io](https://elevenlabs.io).
 - `ELEVENLABS_LANG` — ISO-639-3 hint (e.g. `eng`, `fas`, `spa`). Default: empty → Scribe auto-detects. **Derive it from the current project's context each run (see above)** and set it whenever the language is knowable, for maximum accuracy.
 - `ELEVENLABS_KEYTERMS` — comma-separated proper nouns to bias toward (e.g. `"Acme,Jane Doe,Project Atlas"`) so domain names don't get garbled. **Build this fresh from the current project's context each run (see above) — never hardcode it.** Default: none.
+- `GEMINI_API_KEY` — optional; enables the **automatic fallback engine** (below). Resolved from the same three places as the ElevenLabs key.
+- `GEMINI_MODEL` — fallback model id (default: `gemini-2.5-flash` — free-tier keys often have no `gemini-2.5-pro` quota at all).
 - 3rd arg `num_speakers` — pass the expected count (e.g. `5`) for sharper diarization; otherwise auto-detect.
 
 Pre-reqs: `ffmpeg`, `curl`, `jq` (`brew install ffmpeg jq`).
+
+**Automatic Gemini fallback.** ElevenLabs' edge 403-blocks some exit IPs (datacenter/VPN networks — even a keyless request gets 403), and a key can run out of quota. When the Scribe call fails at the transport/access level (HTTP 000, 403, 429, or 5xx) — or when only a `GEMINI_API_KEY` is configured — `transcribe-video.sh` hands the same job to `scripts/transcribe-gemini.sh`: Files-API upload → `streamGenerateContent` (streaming keeps the connection alive while the model processes long audio; the non-streaming call gets dropped by idle-killing VPNs/proxies) → the same transcript layout. Config errors (400/401/422) stay fatal instead of falling back, so a bad key or request isn't masked. **The fallback's diarization is approximate** (no word-level timestamps; labels can slip at turn boundaries) — treat `speaker_N` labels as hints and resolve identities from content. Scribe remains the primary engine; don't choose the fallback when Scribe is reachable.
 
 After transcription:
 - The transcript is usually high quality, but **speaker_0..speaker_N identities need resolving** — infer from context (who addresses whom, who owns which topic). Mark anything ambiguous as `unknown` and ask the user rather than guessing.
@@ -221,6 +225,7 @@ Permanent instead of Trash: pass `--hard` (or set `MEETING_DELETE_HARD=1`) — g
 
 ## Dependencies
 - **Script:** `scripts/transcribe-video.sh` (ElevenLabs Scribe v2 — used only for audio/video input).
+- **Script:** `scripts/transcribe-gemini.sh` (Gemini fallback engine — invoked automatically by `transcribe-video.sh` when ElevenLabs is unreachable/out of quota, or directly with the same CLI contract).
 - **Script:** `scripts/cleanup-source.sh` (moves a processed source recording to the Trash; `--hard` to delete permanently).
 - **System (for transcription):** ffmpeg, curl, jq.
 - **Sibling skill:** `meeting-recorder` produces the `.m4a` this skill consumes.

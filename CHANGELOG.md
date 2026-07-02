@@ -10,6 +10,27 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-07-02
+
+### Added
+
+- **`meeting-processor`: automatic Gemini transcription fallback.** ElevenLabs'
+  edge 403-blocks some networks' exit IPs (datacenter/VPN — even a keyless request
+  gets 403), which used to kill the whole meeting pipeline. Now, when the Scribe
+  call fails at the transport/access level (HTTP 000, 403, 429, or 5xx) — or when
+  only a `GEMINI_API_KEY` is configured — `transcribe-video.sh` hands the same job
+  to a new `scripts/transcribe-gemini.sh`: Files-API resumable upload →
+  `streamGenerateContent` over SSE (streaming keeps the connection alive while the
+  model processes long audio; the non-streaming call gets dropped by idle-killing
+  VPNs/proxies) → the same transcript layout and CLI contract. Default model
+  `gemini-2.5-flash` (free-tier keys often have no `gemini-2.5-pro` quota;
+  override with `GEMINI_MODEL`). Config errors (400/401/422) stay fatal instead
+  of falling back so a bad key or request isn't masked. The fallback's diarization
+  is approximate — `speaker_N` labels are hints; the skill instructs resolving
+  identities from content. Scribe stays the primary engine.
+
+## [2.10.0] - 2026-06-25
+
 ### Added
 
 - **`chrome-devtools` skill** — drive Google Chrome to do real web tasks (navigate,

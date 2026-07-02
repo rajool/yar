@@ -12,8 +12,8 @@
       "name": "yar",
       "source": "./",
       "category": "development",
-      "version": "2.6.2",
-      "description": "A toolkit of reusable Claude Code skills and agents: an invoke-only git workflow with guard hooks, deep web research via the Gemini CLI, an Agent Skills authoring/validation kit, a project-agnostic file organizer, a macOS meeting recorder plus a transcribe/summarize/route processor (ElevenLabs Scribe v2), a Markdown→RTL/Persian PDF renderer (Vazirmatn), a claim-sourcing helper that links every factual claim to its original independent source, and an always-on guard that blocks destructive commands. Skills act only when invoked.",
+      "version": "2.11.0",
+      "description": "A toolkit of reusable Claude Code skills and agents: an invoke-only git workflow with guard hooks, deep web research via the Gemini CLI, an Agent Skills authoring/validation kit, a project-agnostic file organizer, a macOS meeting recorder plus a transcribe/summarize/route processor (ElevenLabs Scribe v2, Gemini fallback), a Markdown→RTL/Persian PDF renderer (Vazirmatn), a claim-sourcing helper that links every factual claim to its original independent source, and an always-on guard that blocks destructive commands. Skills act only when invoked.",
       "keywords": [
         "claude-code",
         "skills",
