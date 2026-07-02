@@ -10,6 +10,13 @@ only when it is bumped.
 
 ## [Unreleased]
 
+### Fixed
+
+- **README: the skills table was missing three shipped skills** — added rows for
+  [`md-to-pdf`](skills/md-to-pdf/SKILL.md), [`source-claims`](skills/source-claims/SKILL.md),
+  and [`chrome-devtools`](skills/chrome-devtools/SKILL.md), and refreshed the stale
+  skill count and repository-layout comment to match. Docs only — no behavior change.
+
 ## [2.13.0] - 2026-07-02
 
 ### Added

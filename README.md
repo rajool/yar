@@ -18,7 +18,7 @@ _Yar_ (Persian for "companion / helper") bundles an invoke-only git workflow, de
 
 ## Why yar
 
-- **One install, many tools.** A single plugin carries six skills and two agents across every project you work in.
+- **One install, many tools.** A single plugin carries fourteen skills and two agents across every project you work in.
 - **Invoke-only by design.** Nothing branches, commits, records, deletes, or sends on its own — skills run when you ask, guards only block mistakes.
 - **Safety built in.** Hooks block bulk `git add`, edits on `main`, committed binaries/secrets, and destructive commands like `rm -rf` — and they [fail open](CONTRIBUTING.md), so they never get in the way of legitimate work.
 - **Self-hosting.** It is both a **plugin** and its own **marketplace** in one repo, so installing is two lines.
@@ -79,6 +79,9 @@ Some environments don't expose the `/plugin` slash command. Add the block below 
 | [`organize-files`](skills/organize-files/SKILL.md) | `/yar:organize-files` | Project-agnostic engine for tidying any folder: meaningful naming (`YYYY-MM-DD-name.ext`), duplicate detection, best-version selection, safe deletion (trash, never `rm`), and per-folder README upkeep. Reads file contents via [`file-inspector`](agents/file-inspector.md). |
 | [`meeting-recorder`](skills/meeting-recorder/SKILL.md) | `/yar:meeting-recorder` | **macOS only.** Record a call as a small audio-only `.m4a` via a self-built CoreAudio process-tap recorder — no third-party app. Captures both the other participants and your mic, then hands off to `meeting-processor`. |
 | [`meeting-processor`](skills/meeting-processor/SKILL.md) | `/yar:meeting-processor` | Turn a recording or transcript into a clean summary with decisions and action items (owner / deadline / priority), then optionally route them into the project's own tools (tasks, calendar, decisions record, docs, follow-up email). Tracks a per-meeting **processing ledger** so "review the meetings" shows what's done vs. still pending. Transcribes with **ElevenLabs Scribe v2**. Needs `ELEVENLABS_API_KEY` only when transcribing. |
+| [`md-to-pdf`](skills/md-to-pdf/SKILL.md) | `/yar:md-to-pdf` | Convert a Markdown file into a print-ready, **RTL-aware** A4 PDF (Vazirmatn font + headless Chrome) — built for Persian/Farsi and other right-to-left documents, works for LTR too. Renders headings, tables, lists, code, blockquotes, and an optional YAML frontmatter block; fonts are fetched once on first use and cached (no binaries in the repo). |
+| [`source-claims`](skills/source-claims/SKILL.md) | `/yar:source-claims` | Verify and source the factual / market / statistical claims in a draft so each carries a hyperlink to the **original independent source** — never a vendor's own marketing page — backed by a concrete number. Searches the web for the real URL (never guesses or fabricates links) and flags any claim it cannot back, so the author can cut it or mark it an estimate. |
+| [`chrome-devtools`](skills/chrome-devtools/SKILL.md) | `/yar:chrome-devtools` | Drive Google Chrome to do a real task on the web — navigate, fill forms, click through flows, extract page content, check network/console — via the **Chrome DevTools Protocol** (`chrome-devtools` MCP). Targets elements by DOM/accessibility snapshot instead of pixels, so it's faster and more reliable than screenshot+coordinate extensions. Never types passwords, 2FA, or card numbers — the user does those. |
 
 Three manual install commands ship as skills too: [`install-guards`](skills/install-guards/SKILL.md) (`/yar:install-guards`) and [`install-perms`](skills/install-perms/SKILL.md) (`/yar:install-perms`) — see [Guardrails & permissions](#guardrails--permissions) — plus [`install-rtl`](skills/install-rtl/SKILL.md) (`/yar:install-rtl`), which teaches the machine's **global** `~/.claude/CLAUDE.md` to render Persian/RTL chat replies correctly: the whole reply as an RTL HTML widget card when a widget tool exists, atomic LTR isolation for paths/URLs, English-only plain chat text (intros, status notes, closings), and a structurally BiDi-safe fallback for plain CLI. Once per machine, idempotent (a managed marker block), re-run to receive rule upgrades.
 
@@ -143,8 +146,9 @@ yar/
 │   ├── plugin.json        # the "yar" plugin manifest
 │   └── marketplace.json   # one-repo marketplace (source: "./")
 ├── skills/                # one folder per skill (SKILL.md + reference/scripts/assets)
-│   ├── git-workflow/      #   git-workflow · gemini-research-free · skill-builder ·
-│   ├── …                  #   organize-files · meeting-recorder · meeting-processor ·
+│   ├── git-workflow/      #   git-workflow · daily-sync · daily-log · gemini-research-free ·
+│   ├── …                  #   skill-builder · organize-files · meeting-recorder · meeting-processor ·
+│   │                      #   md-to-pdf · source-claims · chrome-devtools ·
 │   └── install-perms/     #   install-guards · install-perms · install-rtl (manual, disable-model-invocation)
 ├── agents/                # file-inspector · gemini-researcher
 ├── hooks/hooks.json       # git-guard + perms-guard + branch-guard wiring
