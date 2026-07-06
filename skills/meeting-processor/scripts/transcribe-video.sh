@@ -322,8 +322,8 @@ recover_orphaned_job() {
   # $1 = reason. On success fills $RESPONSE_FILE with the completed transcript.
   log "      Connection died mid-wait ($1) — the job may still be running server-side."
   log "      Polling the transcripts list for the orphaned job (up to 5 min) ..."
-  local new_id="" i code n
-  for i in $(seq 1 20); do
+  local new_id="" code n
+  for _ in $(seq 1 20); do
     new_id=$(curl -sS --http1.1 "$API_BASE/speech-to-text/transcripts" \
       -H "xi-api-key: $ELEVENLABS_API_KEY" 2>/dev/null | jq -r '.transcripts[0].id // empty' || true)
     [ -n "$new_id" ] && [ "$new_id" != "$BASELINE_ID" ] && break
@@ -332,7 +332,7 @@ recover_orphaned_job() {
   done
   [ -n "$new_id" ] || return 1
   log "      Found orphaned job: $new_id — polling until it completes (up to 60 min) ..."
-  for i in $(seq 1 120); do
+  for _ in $(seq 1 120); do
     code=$(curl -sS --http1.1 -o "$RESPONSE_FILE" -w '%{http_code}' \
       "$API_BASE/speech-to-text/transcripts/$new_id" \
       -H "xi-api-key: $ELEVENLABS_API_KEY" 2>/dev/null || echo 000)
