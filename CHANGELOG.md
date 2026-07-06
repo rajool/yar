@@ -10,6 +10,28 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-07-06
+
+### Added
+
+- **`meeting-processor`: remote transcription mode — zero local bandwidth.**
+  `transcribe-video.sh` now accepts an HTTPS media URL (or a Google Drive
+  ID/URL, rewritten to the `drive.usercontent.google.com` direct-download
+  form) and hands it to ElevenLabs as `source_url`, so the file is fetched
+  server-side — nothing is downloaded or uploaded locally. Verified live on a
+  685MB Meet recording. Drive inputs are probed first (a range-read of the
+  first bytes); private files get guidance (toggle "anyone with link" from the
+  owner's account, or fall back to a local download) instead of a doomed post.
+  ffmpeg is now required only for local-file inputs.
+- **`meeting-processor`: connection-death recovery — no duplicate billing.**
+  Long sync calls can outlive the HTTP connection (idle-killing VPNs/proxies;
+  observed live: HTTP/2 framing error, then "empty reply from server" — both
+  jobs had completed server-side anyway). The script snapshots the newest
+  transcript id before posting, forces `--http1.1`, and on HTTP 000 recovers
+  the orphaned job via `GET /v1/speech-to-text/transcripts` + fetch-by-id
+  instead of re-posting. The Gemini fallback is now correctly skipped for
+  remote URLs (it can only upload local files).
+
 ## [2.14.0] - 2026-07-02
 
 ### Changed

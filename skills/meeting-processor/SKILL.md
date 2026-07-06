@@ -49,8 +49,9 @@ When asked to **review the meetings** — "what's left?", "which meetings still 
 ## 0) Determine the input
 Detect which you have:
 1. **Audio/video file** (mp4/mov/m4a/mp3/wav/webm/…) → transcribe first (step A).
-2. **Google Drive ID or URL** → fetch first (step B).
-3. **Existing transcript** (a `.md`/`.txt`, or pasted text) → skip to step 1.
+2. **HTTPS URL of a media file** → remote mode: pass it straight to `transcribe-video.sh` — ElevenLabs fetches it server-side (`source_url`), zero local download/upload. The URL must be fetchable without cookies/headers (public, presigned, or token-in-query).
+3. **Google Drive ID or URL** → remote mode if link-accessible, else fetch first (step B).
+4. **Existing transcript** (a `.md`/`.txt`, or pasted text) → skip to step 1.
 
 ### A) Local audio/video → transcribe with ElevenLabs Scribe v2
 
@@ -83,11 +84,17 @@ After transcription:
 - Archive the transcript + `raw.json` wherever the project keeps them (don't leave them in a temp/inbox spot).
 
 ### B) Google Drive ID or URL
-Don't pull large video through an MCP as base64 — it destroys context. Instead open the direct-download URL in the browser:
+Don't pull large video through an MCP as base64 — it destroys context. Two paths, in order of preference:
+
+**B1 — Remote mode (zero local bandwidth), for files the user's account owns.** `transcribe-video.sh` rewrites a Drive ID/URL to the `drive.usercontent.google.com` direct-download form and hands it to ElevenLabs as `source_url` (server-side fetch — a 1.8GB recording costs zero local traffic). That works only while the file is **link-accessible**. Flow: turn "anyone with link" ON (e.g. a Drive MCP link-access tool from the file owner's account) → run the script with the Drive URL → turn it OFF again immediately, success or failure. The script probes accessibility first (a range-read of the first bytes) and exits with guidance instead of posting if the file is private. Never leave link access on.
+
+**B2 — Local download, for files the user can't re-share (someone else owns them).** Open the direct-download URL in the browser:
 ```bash
 open "https://drive.google.com/uc?export=download&id=<DRIVE_ID>&confirm=t"
 ```
 Tell the user to confirm the download, then process the file from `~/Downloads/` via step A.
+
+**Connection-death recovery (both modes).** Long jobs can outlive the HTTP connection (idle-killing VPNs/proxies, HTTP/2 framing errors — the script already forces HTTP/1.1). When the sync call dies with HTTP 000, the job usually **keeps running server-side**: the script polls `GET /v1/speech-to-text/transcripts` for the orphaned job and fetches the finished transcript by id instead of re-posting. Never blind-retry a died call yourself — that creates (and bills) a duplicate job.
 
 ### Language — two artifacts, two rules
 - **Verbatim transcript** = the faithful record. Always keep it in the **language actually spoken**; never translate or clean it up. It is a first-class deliverable, separate from the summary.

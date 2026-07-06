@@ -21,8 +21,22 @@
 #
 # Input forms accepted:
 #   - Local file path:       /path/to/recording.mp4   (mp4/mov/mp3/m4a/wav/webm/…)
-#   - Google Drive file ID:  1FgYxLZOgAjqz7VczcoYIOF5Fux6Mk5VH  (script guides you to download)
+#   - HTTPS URL:             https://host/path/recording.mp4
+#                            → REMOTE MODE: the URL is handed to ElevenLabs as
+#                              source_url and fetched server-side — nothing is
+#                              downloaded or uploaded locally (zero bandwidth).
+#                              The URL must be fetchable without cookies/headers
+#                              (public, presigned, or token-in-query).
+#   - Google Drive file ID:  1FgYxLZOgAjqz7VczcoYIOF5Fux6Mk5VH
 #   - Google Drive URL:      https://drive.google.com/file/d/.../view
+#                            → both are rewritten to the direct-download form and
+#                              tried in REMOTE MODE first. That works only while
+#                              the file is link-accessible ("anyone with link" —
+#                              the caller toggles that on/off, e.g. via a Drive
+#                              MCP tool, and should revoke it right after). If
+#                              the file is private the script detects the HTML
+#                              interstitial and falls back to the old guidance:
+#                              download locally, re-run with the local path.
 #
 # Output:
 #   - Default: $PWD/transcripts/<sanitized-stem>.md   (override dir: MEETING_TRANSCRIPT_DIR)
@@ -78,10 +92,11 @@ Usage: transcribe-video.sh <input> [output_path] [num_speakers]
 
 Input forms:
   - Local file:  /path/to/recording.mp4
-  - Drive ID:    1FgYxLZOgAjqz7VczcoYIOF5Fux6Mk5VH
+  - HTTPS URL:   https://host/recording.mp4   (remote mode — ElevenLabs fetches it, zero local bandwidth)
+  - Drive ID:    1FgYxLZOgAjqz7VczcoYIOF5Fux6Mk5VH   (remote mode if link-accessible)
   - Drive URL:   https://drive.google.com/file/d/.../view
 
-  <input>          local file path (mp4/mov/mp3/m4a/wav/webm/…)
+  <input>          local file path or URL (mp4/mov/mp3/m4a/wav/webm/…)
   [output_path]    target .md path (default: $PWD/transcripts/<stem>.md)
   [num_speakers]   expected speaker count, helps diarization accuracy (default: auto-detect)
 
@@ -114,6 +129,10 @@ gemini_key_available() {
 }
 
 fallback_to_gemini() {
+  # The Gemini engine uploads a local file — it cannot fetch remote URLs.
+  if [ -n "${REMOTE_URL:-}" ] || [[ "${INPUT:-}" =~ ^https?:// ]]; then
+    err "$1 — and the Gemini fallback cannot fetch remote URLs. Download the file locally and re-run with the local path."
+  fi
   log ""
   log "==> Falling back to the Gemini engine: $1"
   log "    (diarization will be approximate — resolve speaker identities from content)"
@@ -127,7 +146,7 @@ OUT_PATH="${2:-}"
 NUM_SPEAKERS="${3:-}"
 
 # ---------- Tool check ----------
-command -v ffmpeg >/dev/null 2>&1 || err "ffmpeg not installed. Run: brew install ffmpeg"
+# ffmpeg is only needed for local files (audio extraction) — checked in step [1/3].
 command -v curl   >/dev/null 2>&1 || err "curl not installed"
 command -v jq     >/dev/null 2>&1 || err "jq not installed. Run: brew install jq"
 
@@ -147,39 +166,79 @@ fi
 
 # ---------- Input resolution ----------
 FILE_PATH=""
+REMOTE_URL=""   # non-empty → REMOTE MODE: ElevenLabs fetches the URL server-side (source_url)
+REMOTE_STEM=""
 
-# Match Google Drive URL with file ID
+# What does this URL actually serve? Range-reads the first bytes (nothing is
+# downloaded) and prints the content type. text/html on a Drive direct link
+# means the file is NOT link-accessible (login or virus-scan interstitial).
+probe_content_type() {
+  curl -sSL -r 0-63 -o /dev/null -w '%{content_type}' --max-time 30 "$1" 2>/dev/null || echo ""
+}
+
+drive_private_guidance() {
+  # $1 = Drive file ID
+  log ""
+  log "Drive file $1 is not link-accessible, so ElevenLabs cannot fetch it."
+  log "Two ways forward:"
+  log ""
+  log "  a) Zero-download (preferred): make the file link-readable, re-run, revoke."
+  log "     With the file's owner account, add an 'anyone with link' reader"
+  log "     permission (e.g. a Drive MCP link-access tool, or drive.google.com UI),"
+  log "     re-run this script with the same input, then remove the permission."
+  log ""
+  log "  b) Local download (works for files you don't own):"
+  log "     open 'https://drive.google.com/uc?export=download&id=$1&confirm=t'"
+  log "     then re-run with the downloaded file's local path."
+  log ""
+  exit 2
+}
+
+# Drive URL / bare Drive ID → rewrite to the direct-download endpoint and try
+# remote mode. drive.usercontent.google.com serves the raw bytes (no virus-scan
+# interstitial) as long as the file is link-accessible.
+DRIVE_ID=""
 if [[ "$INPUT" =~ ^https?://drive\.google\.com/.*[/=]([a-zA-Z0-9_-]{20,}) ]]; then
   DRIVE_ID="${BASH_REMATCH[1]}"
-  log "Detected Google Drive URL → file ID: $DRIVE_ID"
-  log ""
-  log "This script does not download from Drive directly (needs OAuth)."
-  log "Download the file, then re-run with the local path:"
-  log ""
-  log "    open 'https://drive.google.com/uc?export=download&id=$DRIVE_ID&confirm=t'"
-  log ""
-  exit 2
 elif [[ "$INPUT" =~ ^[a-zA-Z0-9_-]{20,}$ ]]; then
   DRIVE_ID="$INPUT"
-  log "Detected Google Drive file ID: $DRIVE_ID"
-  log ""
-  log "This script does not download from Drive directly (needs OAuth)."
-  log "Download the file, then re-run with the local path:"
-  log ""
-  log "    open 'https://drive.google.com/uc?export=download&id=$DRIVE_ID&confirm=t'"
-  log ""
-  exit 2
+fi
+
+if [ -n "$DRIVE_ID" ]; then
+  log "Detected Google Drive input → file ID: $DRIVE_ID"
+  REMOTE_URL="https://drive.usercontent.google.com/download?id=${DRIVE_ID}&export=download&confirm=t"
+  REMOTE_STEM="drive-${DRIVE_ID}"
+  log "Probing link accessibility ..."
+  CT=$(probe_content_type "$REMOTE_URL")
+  case "$CT" in
+    text/html*|"") drive_private_guidance "$DRIVE_ID" ;;
+    *) log "      Direct download serves: $CT → remote mode (server-side fetch, zero local bandwidth)" ;;
+  esac
+elif [[ "$INPUT" =~ ^https?:// ]]; then
+  REMOTE_URL="$INPUT"
+  REMOTE_STEM=$(basename "${INPUT%%\?*}")
+  REMOTE_STEM="${REMOTE_STEM%.*}"
+  [ -n "$REMOTE_STEM" ] || REMOTE_STEM="remote-audio"
+  CT=$(probe_content_type "$REMOTE_URL")
+  case "$CT" in
+    text/html*|"") err "URL does not serve a media file (content-type: ${CT:-unreachable}) — it must be fetchable without cookies/headers: $INPUT" ;;
+    *) log "Remote URL serves: $CT → remote mode (server-side fetch, zero local bandwidth)" ;;
+  esac
 elif [ -f "$INPUT" ]; then
   FILE_PATH="$INPUT"
 else
-  err "input not recognized as local file, Drive ID, or Drive URL: $INPUT"
+  err "input not recognized as local file, HTTPS URL, Drive ID, or Drive URL: $INPUT"
 fi
 
 # ---------- Output path ----------
 if [ -z "$OUT_PATH" ]; then
   mkdir -p "$DEFAULT_OUT_DIR"
-  BASENAME=$(basename "$FILE_PATH")
-  STEM="${BASENAME%.*}"
+  if [ -n "$REMOTE_URL" ]; then
+    STEM="$REMOTE_STEM"
+  else
+    BASENAME=$(basename "$FILE_PATH")
+    STEM="${BASENAME%.*}"
+  fi
   # Sanitize: spaces→dashes, drop non-portable chars
   STEM=$(echo "$STEM" | tr ' ' '-' | tr -cd 'A-Za-z0-9._-')
   OUT_PATH="$DEFAULT_OUT_DIR/${STEM}.md"
@@ -192,34 +251,49 @@ mkdir -p "$OUT_DIR"
 WORK_DIR=$(mktemp -d -t transcribe-XXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-# ---------- [1/3] Extract audio ----------
-log "[1/3] Extracting audio (mono ${AUDIO_BITRATE} mp3, ${AUDIO_RATE}Hz) from $(basename "$FILE_PATH") ..."
-AUDIO_FILE="$WORK_DIR/audio.mp3"
-ffmpeg -y -nostdin -loglevel error \
-  -i "$FILE_PATH" \
-  -vn -ac 1 -b:a "$AUDIO_BITRATE" -ar "$AUDIO_RATE" \
-  "$AUDIO_FILE"
+# ---------- [1/3] Prepare audio (local) or hand off the URL (remote) ----------
+if [ -n "$REMOTE_URL" ]; then
+  log "[1/3] Remote mode — no local audio extraction; ElevenLabs fetches the file server-side."
+else
+  command -v ffmpeg >/dev/null 2>&1 || err "ffmpeg not installed. Run: brew install ffmpeg"
+  log "[1/3] Extracting audio (mono ${AUDIO_BITRATE} mp3, ${AUDIO_RATE}Hz) from $(basename "$FILE_PATH") ..."
+  AUDIO_FILE="$WORK_DIR/audio.mp3"
+  ffmpeg -y -nostdin -loglevel error \
+    -i "$FILE_PATH" \
+    -vn -ac 1 -b:a "$AUDIO_BITRATE" -ar "$AUDIO_RATE" \
+    "$AUDIO_FILE"
 
-AUDIO_SIZE=$(stat -f%z "$AUDIO_FILE" 2>/dev/null || stat -c%s "$AUDIO_FILE")
-AUDIO_SIZE_MB=$((AUDIO_SIZE / 1024 / 1024))
-log "      Audio: ${AUDIO_SIZE_MB}MB"
+  AUDIO_SIZE=$(stat -f%z "$AUDIO_FILE" 2>/dev/null || stat -c%s "$AUDIO_FILE")
+  AUDIO_SIZE_MB=$((AUDIO_SIZE / 1024 / 1024))
+  log "      Audio: ${AUDIO_SIZE_MB}MB"
+fi
 
 # ---------- [2/3] Call ElevenLabs Scribe API ----------
 log "[2/3] Calling ElevenLabs Scribe API (model=$ELEVENLABS_MODEL, lang=${ELEVENLABS_LANG:-auto}, diarize=true) ..."
 RESPONSE_FILE="$WORK_DIR/response.json"
 
-# Build curl args
+# Build curl args. Exactly one of file / source_url goes to the API:
+# source_url = remote mode (ElevenLabs downloads the media itself — supports
+# hosted audio/video URLs; verified live returning 200), file = local upload.
+# --http1.1: long-lived requests to the ElevenLabs edge die with
+# "curl: (16) Error in the HTTP2 framing layer" on some networks (observed
+# live 2026-07). HTTP/1.1 is immune and costs nothing here.
 CURL_ARGS=(
   -sS
+  --http1.1
   -X POST
   "$API_BASE/speech-to-text"
   -H "xi-api-key: $ELEVENLABS_API_KEY"
-  -F "file=@$AUDIO_FILE"
   -F "model_id=$ELEVENLABS_MODEL"
   -F "diarize=true"
   -F "timestamps_granularity=word"
   -F "tag_audio_events=false"
 )
+if [ -n "$REMOTE_URL" ]; then
+  CURL_ARGS+=(-F "source_url=$REMOTE_URL")
+else
+  CURL_ARGS+=(-F "file=@$AUDIO_FILE")
+fi
 if [ -n "$ELEVENLABS_LANG" ]; then
   CURL_ARGS+=(-F "language_code=$ELEVENLABS_LANG")
 fi
@@ -236,22 +310,71 @@ else
   log "      keyterms: none"
 fi
 
+# Baseline: newest stored transcript id BEFORE we post. If the connection dies
+# mid-wait (curl 16/28/52 → HTTP 000), the job usually KEEPS RUNNING server-side
+# (observed live 2026-07: two "failed" HTTP 000 calls had both completed and
+# were retrievable). We then recover it from GET /speech-to-text/transcripts
+# instead of re-posting — a blind retry creates (and bills) a duplicate job.
+BASELINE_ID=$(curl -sS --http1.1 "$API_BASE/speech-to-text/transcripts" \
+  -H "xi-api-key: $ELEVENLABS_API_KEY" 2>/dev/null | jq -r '.transcripts[0].id // empty' || true)
+
+recover_orphaned_job() {
+  # $1 = reason. On success fills $RESPONSE_FILE with the completed transcript.
+  log "      Connection died mid-wait ($1) — the job may still be running server-side."
+  log "      Polling the transcripts list for the orphaned job (up to 5 min) ..."
+  local new_id="" i code n
+  for i in $(seq 1 20); do
+    new_id=$(curl -sS --http1.1 "$API_BASE/speech-to-text/transcripts" \
+      -H "xi-api-key: $ELEVENLABS_API_KEY" 2>/dev/null | jq -r '.transcripts[0].id // empty' || true)
+    [ -n "$new_id" ] && [ "$new_id" != "$BASELINE_ID" ] && break
+    new_id=""
+    sleep 15
+  done
+  [ -n "$new_id" ] || return 1
+  log "      Found orphaned job: $new_id — polling until it completes (up to 60 min) ..."
+  for i in $(seq 1 120); do
+    code=$(curl -sS --http1.1 -o "$RESPONSE_FILE" -w '%{http_code}' \
+      "$API_BASE/speech-to-text/transcripts/$new_id" \
+      -H "xi-api-key: $ELEVENLABS_API_KEY" 2>/dev/null || echo 000)
+    if [ "$code" = "200" ]; then
+      n=$(jq -r '((.words // []) | length) + ((.text // "") | length)' "$RESPONSE_FILE" 2>/dev/null || echo 0)
+      if [ "${n:-0}" -gt 0 ]; then
+        log "      Recovered completed transcript $new_id."
+        return 0
+      fi
+    fi
+    sleep 30
+  done
+  return 1
+}
+
 # Capture HTTP status code separately by writing body to file.
 # A transport failure (no connection at all) must not kill the script here —
-# it is a fallback trigger, so map it to status 000.
-HTTP_STATUS=$(curl -w "%{http_code}" -o "$RESPONSE_FILE" "${CURL_ARGS[@]}") || HTTP_STATUS="000"
+# it is a fallback/recovery trigger, so map it to status 000.
+HTTP_STATUS=$(curl -w "%{http_code}" -o "$RESPONSE_FILE" --connect-timeout 30 --max-time 5400 "${CURL_ARGS[@]}") || HTTP_STATUS="000"
 
 if [ "$HTTP_STATUS" != "200" ]; then
   log "      HTTP $HTTP_STATUS"
   cat "$RESPONSE_FILE" >&2 2>/dev/null || true
-  # Transport/access failures → try the fallback engine if a Gemini key exists:
-  #   000 = no connection · 403 = ElevenLabs' edge blocks this exit IP
-  #   (datacenter/VPN — even keyless requests get 403) · 429 = quota
-  #   exhausted · 5xx = service down.
+  # Transport/access failures:
+  #   000 = connection died (or never connected). The job often completed
+  #         server-side anyway → FIRST try to recover it (no duplicate billing),
+  #         only then consider the fallback engine.
+  #   403 = ElevenLabs' edge blocks this exit IP (datacenter/VPN — even
+  #         keyless requests get 403) · 429 = quota exhausted · 5xx = down.
   # Config errors (400/401/422) stay fatal: falling back would mask a bug the
   # user should fix (bad key, bad request).
   case "$HTTP_STATUS" in
-    000|403|429|5??)
+    000)
+      if recover_orphaned_job "HTTP 000"; then
+        HTTP_STATUS="200"
+      elif gemini_key_available; then
+        fallback_to_gemini "ElevenLabs API unreachable (HTTP 000, no orphaned job found)"
+      else
+        err "ElevenLabs API returned HTTP 000 and no orphaned server-side job was found (no GEMINI_API_KEY for the fallback engine)"
+      fi
+      ;;
+    403|429|5??)
       if gemini_key_available; then
         fallback_to_gemini "ElevenLabs API unreachable/refused (HTTP $HTTP_STATUS)"
       fi
@@ -279,7 +402,7 @@ SPEAKER_COUNT=$(jq -r '[.words[]?.speaker_id // empty] | unique | length' "$RESP
 {
   echo "# Transcript — $OUT_STEM"
   echo ""
-  echo "**Source:** $FILE_PATH"
+  echo "**Source:** ${FILE_PATH:-$REMOTE_URL}"
   echo "**Generated:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "**Provider:** ElevenLabs Scribe (model=$ELEVENLABS_MODEL)"
   echo "**Language:** $LANG_CODE"
