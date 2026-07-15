@@ -1,6 +1,6 @@
 ---
 name: install-rtl
-description: Install yar's Persian/RTL chat-rendering rule into the machine's global ~/.claude/CLAUDE.md (idempotent managed marker block) so every project renders mixed Persian-English replies correctly — the whole reply as an RTL HTML widget card when a widget tool exists, English-only plain chat text, atomic LTR isolation for paths/URLs, and a BiDi-safe fallback for plain CLI. Run once per machine; re-run to update. Invoked manually as /yar:install-rtl; it does not auto-run.
+description: Install yar's Persian/RTL chat-rendering rule into the machine's global ~/.claude/CLAUDE.md (idempotent managed marker block) so every project renders mixed Persian-English replies correctly — the whole reply as one self-contained RTL widget card (an always-on base style plus pay-per-use component snippets) when a widget tool exists, English-only plain chat text, atomic LTR isolation for paths/URLs, and a BiDi-safe fallback for plain CLI. Run once per machine; re-run to update. Invoked manually as /yar:install-rtl; it does not auto-run.
 disable-model-invocation: true
 ---
 

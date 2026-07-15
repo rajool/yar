@@ -3,7 +3,7 @@
   "name": "yar",
   "displayName": "Yar",
   "description": "A toolkit of reusable Claude Code skills and agents: an invoke-only git workflow with guard hooks (no bulk add, no edits on main, no binaries/secrets), deep web research via the Gemini CLI, an Agent Skills authoring/validation kit, a project-agnostic file organizer, a macOS audio meeting recorder plus a processor that transcribes (ElevenLabs Scribe v2, with an automatic Gemini fallback for blocked networks), summarizes, and routes action items into the project's own tools, a Markdown→RTL/Persian PDF renderer (Vazirmatn), a claim-sourcing helper that links every factual claim to its original independent source, a start-of-day/end-of-day sync that pulls and updates everything each morning and pushes, reconciles, and tidies every repo and plugin each night, a personal end-of-day retro-log engine (five questions, one dated file per day, built for pattern analysis over time), a Chrome browser-automation skill that drives Chrome via the DevTools Protocol (CDP) — snapshot/uid targeting, far more reliable and faster than coordinate-clicking extensions — a one-command installer that teaches a machine's global CLAUDE.md to render Persian/RTL chat replies correctly (whole-reply RTL widget card, atomic LTR token isolation, English-only plain chat text, BiDi-safe CLI fallback), and an always-on permission guard that blocks destructive commands like rm -rf. Skills act only when invoked.",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "author": {
     "name": "Ali Rajool",
     "url": "https://github.com/rajool"

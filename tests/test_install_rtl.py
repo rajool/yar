@@ -6,6 +6,7 @@ malformed marker pairs treated as absent (append, never rewrite outside a
 well-formed block).
 """
 import os
+import re
 import tempfile
 import unittest
 
@@ -79,6 +80,37 @@ class TestInstall(unittest.TestCase):
                 del os.environ["CLAUDE_CONFIG_DIR"]
             else:
                 os.environ["CLAUDE_CONFIG_DIR"] = old
+
+
+class TestRuleKit(unittest.TestCase):
+    """The v3 pay-per-use kit: base + snippets, and the v2 review invariants."""
+
+    def test_no_svg_data_uris_remain(self):
+        # The data URIs were the most mangling-prone bytes of the verbatim
+        # copy; the kit must stay free of them (glyphs + accent borders now).
+        self.assertNotIn("data:image/svg", rtl.RULE)
+
+    def test_every_documented_component_has_a_snippet(self):
+        for tag, selector in [
+            ("TABLE", ".rc table{"), ("BADGE", ".rc .badge{"), ("KV", ".rc .kv{"),
+            ("KPI", ".rc .kpi{"), ("BARS", ".rc .bars{"), ("DONUT", ".rc .donut{"),
+            ("FLOW", ".rc .flow{"), ("TL", ".rc .tl{"), ("CTA", ".rc .cta{"),
+        ]:
+            self.assertIn("\n" + tag + " ", rtl.RULE)
+            self.assertIn(selector, rtl.RULE)
+
+    def test_base_keeps_inline_block_code_isolation(self):
+        # Empirical v1 finding: bare isolate is not enough for neutral-edged
+        # tokens; inline-block is what makes them atomic.
+        self.assertIn("display:inline-block", rtl.RULE)
+
+    def test_no_bare_sub_11px_font_sizes(self):
+        # Every sub-1em size must be floored via max(...,11px); a bare
+        # "font-size:.Nem" would render below the readable floor.
+        self.assertEqual(re.findall(r"font-size:\.\d+em", rtl.RULE), [])
+
+    def test_composition_stays_a_palette(self):
+        self.assertIn("lightest structure", rtl.RULE)
 
 
 if __name__ == "__main__":

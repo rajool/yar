@@ -10,6 +10,48 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-07-08
+
+### Changed
+
+- **Direction-aware cards: one BASE now styles both directions.** The card
+  wrapper's `dir` attribute follows the reply language: `dir="rtl"` behaves
+  exactly as before, and `dir="ltr"` (English replies, optional) flips text
+  alignment, switches Vazirmatn for Inter, and mirrors the flow and CTA
+  arrows through four override rules that ship inertly inside BASE. Ported
+  from readable 4.4 production use; no new snippets and no size change for
+  RTL replies.
+
+- **`install-rtl` rule v2: the whole reply ships as one self-contained styled
+  card.** The rule now carries a fixed `<style>` component kit the model copies
+  verbatim (Vazirmatn, per-block direction, LTR-isolated code, KPI grids,
+  CSS-only donut and bar charts, flow arrows, timelines, icon callouts, badges,
+  a `sendPrompt` CTA), so styling is deterministic and polish costs class names
+  instead of free-form HTML. Two zero-token alternatives were tested and
+  rejected on Claude Desktop: a PreToolUse hook rewriting the widget input
+  (`updatedInput` is ignored for MCP tools) and a CDN-loaded renderer (the
+  widget sandbox does not execute external scripts, so the card renders blank).
+  Re-run `/yar:install-rtl` to receive the new rule.
+- **The kit is pay-per-use: always-on base plus per-component snippets,
+  roughly 70% cheaper for prose replies.** The style kit does not ship whole
+  with every reply. A 2.5KB BASE covers all text content (headings,
+  paragraphs, lists, ok/no items, callouts, LTR-isolated code), and each
+  component (table, badge, kv, kpi, bars, donut, flow, timeline, cta)
+  carries its own CSS snippet the model appends only when the reply
+  actually uses it. The six SVG data-URI icons are gone: check/cross became
+  text glyphs and callouts use tint plus an accent border, removing the
+  1.5KB of most mangling-prone bytes from the verbatim copy. Per-reply
+  style cost: 8.8KB (~2.4k tokens) for the monolithic kit, 2.5KB (~0.7k)
+  for prose replies, 7.1KB (~2k) worst case with every component. Review
+  invariants are regression-tested: `display:inline-block` code isolation,
+  `max(...,11px)` size floors (now on the table body too),
+  palette-not-template composition, the `&rlm;` escape hatch, and the
+  precise network wording.
+- **Multiline code blocks render correctly.** BASE gains a `<pre><code>`
+  rule: LTR block, monospace, bordered, horizontally scrollable, floored at
+  11px like every other derived size. Persian dev answers routinely carry
+  code blocks; previously they fell back to unstyled, BiDi-fragile text.
+
 ## [2.15.0] - 2026-07-06
 
 ### Added
