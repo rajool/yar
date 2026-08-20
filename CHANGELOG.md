@@ -10,6 +10,42 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-20
+
+### Added
+
+- **`repo-sweep` skill — end-of-day sweep of repos, branches, worktrees, and
+  plugins.** One invocation audits every local repo (read-only `sweep-scan.sh`),
+  presents a classified plan (safe / needs-you / skipped), and on confirmation:
+  reconciles each checkout with its remote, prunes local branches whose content
+  already landed on the default branch (`MERGED` by ancestry or `EQUIV` by
+  `git cherry` — the squash-merge signal), removes merged/contained worktrees,
+  repairs-or-trashes **orphaned worktree directories** left behind by repo renames
+  (a state `git worktree list` cannot even see), un-parks primaries left on merged
+  branches, deletes zero-unique remote branches (PR-aware, confirmed per item),
+  and updates every installed plugin to its latest published version — flagging
+  version drift between a plugin's dev clone, its manifests, and the installed
+  copy. Never discards uncommitted work; orphan dirs go to `~/.Trash`, never
+  `rm -rf`.
+
+### Removed
+
+- **Breaking: the `daily-sync` skill.** It was superseded by `repo-sweep`, which
+  covers its evening duties correctly and more deeply (daily-sync's sweep only saw
+  worktrees whose upstream was `gone`, missing squash-merged branches with no or
+  live upstreams, detached worktrees, orphaned worktree dirs, parked primaries,
+  stale remote branches, and plugin version drift). The morning greeting routine
+  is retired with it; `repo-sweep` is safe to run at any time of day and covers
+  the pull + plugin-refresh duties. `$DAILY_REPO_ROOTS` / `$DAILY_SCAN_DEPTH`
+  keep working unchanged.
+
+### Fixed
+
+- **`marketplace.json` had drifted from `plugin.json`** (entry pinned at 2.12.0
+  with a stale description while the plugin was at 2.16.0), so installs were
+  served stale metadata. Both manifests now carry the same version and
+  description — and `repo-sweep` detects exactly this class of drift from now on.
+
 ## [2.16.0] - 2026-07-08
 
 ### Changed

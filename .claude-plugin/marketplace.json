@@ -12,8 +12,8 @@
       "name": "yar",
       "source": "./",
       "category": "development",
-      "version": "2.12.0",
-      "description": "A toolkit of reusable Claude Code skills and agents: an invoke-only git workflow with guard hooks, deep web research via the Gemini CLI, an Agent Skills authoring/validation kit, a project-agnostic file organizer, a macOS meeting recorder plus a transcribe/summarize/route processor (ElevenLabs Scribe v2, Gemini fallback), a Markdown→RTL/Persian PDF renderer (Vazirmatn), a claim-sourcing helper that links every factual claim to its original independent source, a personal end-of-day retro-log engine built for pattern analysis over time, and an always-on guard that blocks destructive commands. Skills act only when invoked.",
+      "version": "3.0.0",
+      "description": "A toolkit of reusable Claude Code skills and agents: an invoke-only git workflow with guard hooks (no bulk add, no edits on main, no binaries/secrets), deep web research via the Gemini CLI, an Agent Skills authoring/validation kit, a project-agnostic file organizer, a macOS audio meeting recorder plus a processor that transcribes (ElevenLabs Scribe v2, with an automatic Gemini fallback for blocked networks), summarizes, and routes action items into the project's own tools, a Markdown→RTL/Persian PDF renderer (Vazirmatn), a claim-sourcing helper that links every factual claim to its original independent source, an end-of-day sweep that reconciles every repo with its remote, prunes stale branches, worktrees, and orphaned worktree directories (squash-merge aware, PR-aware), and brings every installed plugin up to its latest published version while flagging manifest/install version drift, a personal end-of-day retro-log engine (five questions, one dated file per day, built for pattern analysis over time), a Chrome browser-automation skill that drives Chrome via the DevTools Protocol (CDP) — snapshot/uid targeting, far more reliable and faster than coordinate-clicking extensions — a one-command installer that teaches a machine's global CLAUDE.md to render Persian/RTL chat replies correctly (whole-reply RTL widget card, atomic LTR token isolation, English-only plain chat text, BiDi-safe CLI fallback), and an always-on permission guard that blocks destructive commands like rm -rf. Skills act only when invoked.",
       "keywords": [
         "claude-code",
         "skills",
@@ -26,7 +26,8 @@
         "file-organizing",
         "meeting",
         "transcription",
-        "permissions"
+        "permissions",
+        "sweep"
       ]
     }
   ]
