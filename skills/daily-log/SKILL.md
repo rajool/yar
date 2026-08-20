@@ -1,6 +1,6 @@
 ---
 name: daily-log
-description: Project-agnostic engine for capturing a person's end-of-day retro log — what got done, decisions made, energy/focus (1-10), concerns, and tomorrow's single top priority — one dated Markdown file per day, structured for later pattern analysis (energy trends, recurring concerns). Conversational, not a form; adapts to a tired user with a 3-line short log. Optionally opens with a read-only evening dashboard (tasks completed today, overdue deadlines, tomorrow's calendar) when the caller wires in sources. The caller supplies the context layer: log directory, dashboard sources, decision store, concern routing, and conversation language. Personal retro only — end-of-day *repo/plugin* syncing is `yar:daily-sync`, not this. Triggers: "log my day", "daily log", "end-of-day log", "evening retro", "journal my day", "how was my day wrap-up".
+description: Project-agnostic engine for capturing a person's end-of-day retro log — what got done, decisions made, energy/focus (1-10), concerns, and tomorrow's single top priority — one dated Markdown file per day, structured for later pattern analysis (energy trends, recurring concerns). Conversational, not a form; adapts to a tired user with a 3-line short log. Optionally opens with a read-only evening dashboard (tasks completed today, overdue deadlines, tomorrow's calendar) when the caller wires in sources. The caller supplies the context layer: log directory, dashboard sources, decision store, concern routing, and conversation language. Personal retro only — end-of-day *repo/plugin* sweeping is `yar:repo-sweep`, not this. Triggers: "log my day", "daily log", "end-of-day log", "evening retro", "journal my day", "how was my day wrap-up".
 ---
 
 # daily-log — an end-of-day personal retro engine
@@ -9,7 +9,7 @@ The reusable **engine** for a nightly personal retrospective: five questions, on
 
 > **The caller supplies the context layer.** A wrapping skill (or you, inline) provides: the **log directory**, any **phase-1 dashboard sources** (task system, calendars, domain flags), the **decision store** (where a formally recorded decision goes), **concern routing** (e.g. a health concern → the caller's health tracker; a match against a caller-defined risk watch-list → flag it), and the **conversation language**. With no caller layer, sensible defaults apply: logs in `journal/daily-logs/` at the project root, no dashboard, decisions and concerns stay in the log, converse in the user's language.
 
-Not to be confused with `yar:daily-sync`: that skill owns "good night" as a *repo/plugin* sync. This one is the *person's* retro. A caller may chain them (sync repos, then log the day), but the engine itself never touches git.
+Not to be confused with `yar:repo-sweep`: that skill owns "good night" as a *repo/plugin* sweep. This one is the *person's* retro. A caller may chain them (sync repos, then log the day), but the engine itself never touches git.
 
 ---
 
