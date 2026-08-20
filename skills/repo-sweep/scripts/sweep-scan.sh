@@ -87,7 +87,8 @@ expand_tilde() {
 }
 
 # Lowercase a path for comparisons: macOS filesystems are case-insensitive, so
-# the same worktree can be registered as /Users/x and visited as /users/x.
+# the same worktree can be registered under one letter case and visited under
+# another (an uppercase vs lowercase home directory segment, for example).
 lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 # Resolve the root list (explicit=1 means the user named them, so warn on misses).
