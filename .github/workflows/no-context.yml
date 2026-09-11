@@ -1,0 +1,26 @@
+name: no-context
+
+# Keep the public yar repo generic: fail the check (which blocks merge when the branch
+# is protected) if any tracked file -- or the pull request's own title and body --
+# carries private / context-specific content.
+# Detection lives in .claude/hooks/context-guard.py (shared with the local PreToolUse hook).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan for private / context-specific content
+        run: python3 .claude/hooks/context-guard.py --all
+      - name: Scan the pull request title and body
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/pull-request-text.md"
+          python3 .claude/hooks/context-guard.py --scan "$RUNNER_TEMP/pull-request-text.md"

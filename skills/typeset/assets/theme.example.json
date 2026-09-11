@@ -1,0 +1,74 @@
+{
+  "$comment": "Copy to <project>/.claude/pdf-theme.json and edit. Every field is optional.",
+
+  "name": "Northwind Analytics",
+  "legal_name": "Northwind Analytics Ltd.",
+  "tagline": "Measurement infrastructure for product teams",
+  "contact": ["hello@example.com", "+1 555 0100"],
+  "website": "northwind.example",
+
+  "logo": "mark.svg",
+  "logo_width_mm": 18,
+
+  "ink": "#111111",
+  "accent": "#1f6feb",
+
+  "mood": "technical",
+  "$fonts_comment": "Five roles. Omit any and the mood decides; omit the block and the mood decides all of it. latin_guest is the Latin face used inside a right-to-left sentence.",
+  "fonts": {
+    "persian_display": "estedad",
+    "persian": "vazirmatn",
+    "latin_display": "ibm-plex-sans",
+    "latin": "ibm-plex-sans",
+    "latin_guest": "ibm-plex-sans",
+    "persian_label": "vazirmatn",
+    "latin_label": "ibm-plex-sans",
+    "mono": "jetbrains-mono"
+  },
+
+  "$weights_comment": "Override any of the mood's weights. emphasis is what <strong> sets: one step above the body, not bold.",
+  "weights": {
+    "display": 300,
+    "heading": 600,
+    "body": 400,
+    "emphasis": 600,
+    "label": 500
+  },
+
+  "$table_comment": "Table type relative to the body; 0.86 is the register's default.",
+  "table": { "size_em": 0.86 },
+
+  "$deck_comment": "kind: deck geometry. base_scale multiplies the body size on a slide.",
+  "deck": { "width_mm": 338.67, "height_mm": 190.5, "margin_mm": 16, "base_scale": 1.55 },
+
+  "language": "en",
+  "direction": null,
+  "calendar": null,
+  "digits": null,
+
+  "$locales_comment": "Per-language layer. A document with lang: fa in its frontmatter takes identity fields and, if given, mood / fonts / weights / table from locales.fa.",
+  "locales": {
+    "fa": {
+      "tagline": "Persian tagline here",
+      "contact": ["Persian contact line here"],
+      "mood": "formal"
+    }
+  },
+
+  "page": {
+    "size": "letter",
+    "margin_top_mm": 24,
+    "margin_bottom_mm": 28,
+    "margin_inner_mm": 30,
+    "margin_outer_mm": 30
+  },
+
+  "base_size_pt": null,
+  "line_height": null,
+
+  "cover": "auto",
+  "running_header": true,
+  "page_numbers": true,
+  "confidentiality": "Confidential",
+  "footer_note": null
+}

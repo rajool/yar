@@ -1,0 +1,22 @@
+{
+  // markdownlint-cli2 config. Rationale: yar's docs use a deliberately compact house
+  // style with long prose lines and some inline HTML (README). We disable the purely
+  // stylistic/whitespace rules that would force large reformatting, and keep the rules
+  // that catch real defects (broken link fragments, reversed/empty links, hard tabs,
+  // trailing spaces, missing final newline, inconsistent emphasis, etc.). MD051 already
+  // earned its keep by catching a broken in-page link.
+  "config": {
+    "default": true,
+    "MD013": false, // line length — long prose lines are intentional
+    "MD022": false, // blanks around headings — compact house style
+    "MD031": false, // blanks around fences — compact house style
+    "MD032": false, // blanks around lists — compact house style
+    "MD033": false, // inline HTML — README uses <div>/<details>/<summary>
+    "MD040": false, // fenced-code language — many fences are illustrative (trees, name formats)
+    "MD041": false, // first line H1 — README opens with a centered <div>
+    "MD060": false, // table pipe spacing — cosmetic
+    "MD024": { "siblings_only": true } // CHANGELOG repeats "### Added" under each version
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["node_modules", ".git"]
+}

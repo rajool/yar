@@ -1,0 +1,20 @@
+{
+  "skill_name": "<the skill's name — same as name in the frontmatter>",
+  "_guide": "2–3 real prompts that a real user would actually type. First without assertions; add the assertions during the run (reference/evaluation.md). Delete this _guide field in the real version.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "<a specific, real request — with details: file name, path, amount, date, context>",
+      "expected_output": "<what does the correct output look like?>",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "prompt": "<another request with different phrasing for the same intent>",
+      "expected_output": "<...>",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}
