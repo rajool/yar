@@ -13,7 +13,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Scan for private / context-specific content
         run: python3 .claude/hooks/context-guard.py --all
       - name: Scan the pull request title and body
