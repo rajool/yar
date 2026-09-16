@@ -1,11 +1,15 @@
-"""sweep-scan.sh: branch classification, with merged pull requests as proof.
+"""sweep-scan.sh: branch classification, with merged pull requests and tree identity
+as proof.
 
 Run via subprocess against throwaway git repos and a fake ``gh`` on PATH (its answers
 come from FAKE_GH_* env vars), so the tests cover the real decision path: a
-multi-commit branch squash-merged on the remote reads ``UNIQUE(N)`` from git alone and
-``PRMERGED(#N)`` once a merged PR vouches for it -- and every failure mode of the PR
-lookup (no gh, no token, non-GitHub remote, failed call, stale default ref) falls back
-to the git-only answer rather than inventing proof.
+multi-commit branch squash-merged on the remote, with the default branch moved on
+since, reads ``UNIQUE(N)`` from git alone and ``PRMERGED(#N)`` once a merged PR vouches
+for it -- and every failure mode of the PR lookup (no gh, no token, non-GitHub remote,
+failed call, stale default ref) falls back to the git-only answer rather than inventing
+proof. A tip whose tree IS the default branch's tree -- the same work landed there in a
+different commit shape, with no PR -- reads ``TREESAME``, judged only after every other
+proof failed and only against the current default tip.
 
 The in-use probe is covered the same way, with a fake ``lsof`` whose snapshot each test
 writes: a worktree (or orphan dir, or parked primary) some process stands in reads
@@ -132,6 +136,30 @@ class Sandbox:
         tip = git(self.repo, "rev-parse", "HEAD")
         git(self.repo, "switch", "-q", "main")
         return tip
+
+    def main_moves_on(self, fn="unrelated.txt"):
+        """An unrelated commit on main, pushed. Main's tree then differs from every
+        feature tip's, so a squash can only be proved by the PR record -- the fixtures
+        that isolate that proof call this; without it a fresh squash reads TREESAME."""
+        git(self.repo, "switch", "-q", "main")
+        self.write(fn, "unrelated\n")
+        git(self.repo, "add", fn)
+        git(self.repo, "commit", "-q", "-m", "chore: unrelated")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+
+    def land_directly(self, name, msg="feat: the same work, one combined commit"):
+        """Push NAME's whole content to main as ONE combined commit, with no PR: the
+        shape patch-ids (two commits against one) and the PR record both miss, while
+        the branch tip's tree IS main's tree. Returns the combined commit."""
+        git(self.repo, "switch", "-q", "main")
+        git(self.repo, "checkout", "-q", name, "--", ".")
+        git(self.repo, "commit", "-q", "-m", msg)
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+        assert (git(self.repo, "rev-parse", "origin/main^{tree}")
+                == git(self.repo, "rev-parse", name + "^{tree}"))
+        return git(self.repo, "rev-parse", "HEAD")
 
     def squash_merge(self, name, number, merged_at="2026-09-09T10:00:00Z"):
         """Squash NAME onto main like GitHub does, push, and record the PR row."""
@@ -264,6 +292,7 @@ class MultiCommitSquashMerge(SweepScanBase):
         self.head, self.merge = None, None
         self.sb.feature("feat/multi", commits=2, push=True)
         self.head, self.merge = self.sb.squash_merge("feat/multi", 7)
+        self.sb.main_moves_on()   # else the tip's tree IS main's: TREESAME, no PR needed
 
     def test_git_alone_reads_unique(self):
         rows, _, rc = self.sb.scan("--no-pr")
@@ -379,6 +408,7 @@ class NoProofWithoutEvidence(SweepScanBase):
         super().setUp()
         self.sb.feature("feat/multi", commits=2, push=True)
         self.head, self.merge = self.sb.squash_merge("feat/multi", 7)
+        self.sb.main_moves_on()   # else the tip's tree IS main's: TREESAME, no PR needed
 
     def _unique(self, rows):
         self.assertEqual(branch_state(rows, "feat/multi"), "UNIQUE(2)")
@@ -479,6 +509,92 @@ class GitOnlyProofsUnchanged(SweepScanBase):
         row = wt_row(rows, "DETACHED@" + head[:7])
         self.assertEqual(row[4], "no")
 
+    def test_equiv_outranks_tree_same(self):
+        # A single-commit squash with nothing landed since has main's tree too, but
+        # patch-equivalence is judged first: the label stays EQUIV.
+        self.sb.feature("feat/single", commits=1)
+        self.sb.squash_merge("feat/single", 8)
+        self.assertEqual(git(self.sb.repo, "rev-parse", "feat/single^{tree}"),
+                         git(self.sb.repo, "rev-parse", "origin/main^{tree}"))
+        rows, _, _ = self.sb.scan("--no-pr")
+        self.assertEqual(branch_state(rows, "feat/single"), "EQUIV")
+        s = summary(rows)
+        self.assertEqual(s["stale-local-branches"], "1")
+        self.assertEqual(s["tree-same-local"], "0")
+
+
+class TreeIdenticalTip(SweepScanBase):
+    """The case that motivated TREESAME: the branch's work reached main directly as ONE
+    combined commit, with no PR. Patch-ids miss it (two commits against one), no PR
+    vouches for it, yet the tip's tree IS main's tree: nothing on it is unique, and a
+    PR of it would squash to an empty commit."""
+
+    def setUp(self):
+        super().setUp()
+        self.head = self.sb.feature("feat/direct", commits=2, push=True)
+        self.landed = self.sb.land_directly("feat/direct")
+
+    def test_reads_tree_same_from_git_alone(self):
+        rows, _, rc = self.sb.scan("--no-pr")
+        self.assertEqual(rc, 0)
+        self.assertEqual(branch_state(rows, "feat/direct"), "TREESAME")
+        self.assertEqual(rbranch_state(rows, "feat/direct"), "TREESAME")
+        s = summary(rows)
+        self.assertEqual(s["stale-local-branches"], "1")
+        self.assertEqual(s["stale-remote-branches"], "1")
+        self.assertEqual(s["tree-same-local"], "1")
+        self.assertEqual(s["tree-same-remote"], "1")
+        self.assertEqual(s["pr-merged-local"], "0")
+
+    def test_no_pr_record_needed(self):
+        rows, _, _ = self.sb.scan()
+        self.assertEqual(branch_state(rows, "feat/direct"), "TREESAME")
+        self.assertEqual(summary(rows)["pr-proof"], "1/1")
+
+    def test_a_merged_pr_outranks_the_tree(self):
+        # Proof order: PRMERGED is judged before TREESAME, so a PR that vouches wins
+        # the label even when the trees agree.
+        self.sb.add_pr(3, "feat/direct", self.head, self.landed)
+        rows, _, _ = self.sb.scan()
+        self.assertEqual(branch_state(rows, "feat/direct"), "PRMERGED(#3)")
+        s = summary(rows)
+        self.assertEqual(s["pr-merged-local"], "1")
+        self.assertEqual(s["tree-same-local"], "0")
+
+    def test_the_default_branch_moving_on_reads_unique_again(self):
+        # Only the current tip of origin/main is compared: exact, not historical.
+        self.sb.main_moves_on()
+        rows, _, _ = self.sb.scan("--no-pr")
+        self.assertEqual(branch_state(rows, "feat/direct"), "UNIQUE(2)")
+        self.assertEqual(rbranch_state(rows, "feat/direct"), "UNIQUE(2)")
+        self.assertEqual(summary(rows)["tree-same-local"], "0")
+
+    def test_work_beyond_the_default_branch_stays_unique(self):
+        self.sb.commit_on("feat/direct", "later.txt")
+        rows, _, _ = self.sb.scan("--no-pr")
+        self.assertEqual(branch_state(rows, "feat/direct"), "UNIQUE(3)")
+        self.assertEqual(summary(rows)["stale-local-branches"], "0")
+
+    def test_worktree_and_parked_primary_carry_it(self):
+        wt = os.path.join(self.sb.tmp, "wt-direct")
+        git(self.sb.repo, "worktree", "add", "-q", "--detach", wt, self.head)
+        git(self.sb.repo, "switch", "-q", "feat/direct")
+        rows, _, _ = self.sb.scan("--no-pr")
+        self.assertEqual(wt_row(rows, "DETACHED@" + self.head[:7])[4], "TREESAME")
+        parked = rows["PARKED"][0]
+        self.assertEqual(parked[2], "feat/direct")
+        self.assertEqual(parked[3], "TREESAME")
+        git(self.sb.repo, "switch", "-q", "main")
+
+    def test_fresh_multi_commit_squash_reads_tree_same_without_gh(self):
+        # A squash-merged 2-commit branch with nothing landed since has main's tree
+        # too: git alone now proves what used to need the PR record.
+        self.sb.feature("feat/multi", commits=2, push=True)
+        self.sb.squash_merge("feat/multi", 7)
+        rows, _, _ = self.sb.scan("--no-pr")
+        self.assertEqual(branch_state(rows, "feat/multi"), "TREESAME")
+        self.assertEqual(branch_state(rows, "feat/direct"), "UNIQUE(2)")   # main moved on
+
 
 class InUseProbe(SweepScanBase):
     """A checkout some live process is standing in is flagged -- never guessed."""
@@ -570,7 +686,8 @@ class Help(unittest.TestCase):
         p = subprocess.run(["bash", SCRIPT, "--help"], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0)
         for needle in ("PRMERGED(#N)", "--no-pr", "RBRANCH REPO NAME STATE LASTCOMMIT",
-                       "pr-merged-local", "pr-proof", "--limit 500"):
+                       "pr-merged-local", "pr-proof", "--limit 500", "TREESAME",
+                       "Tree-identical proof", "tree-same-local"):
             self.assertIn(needle, p.stdout)
 
     def test_help_documents_the_in_use_probe(self):

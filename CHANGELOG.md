@@ -10,6 +10,38 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-09-16
+
+### Added
+
+- **`repo-sweep`: a tip whose tree is the default branch's tree is proof too
+  — `TREESAME`.** `sweep-scan.sh` gains a fourth rung between `PRMERGED` and
+  `UNIQUE`: when ancestry, patch-ids and the merged-PR record have all failed
+  to prove a branch, worktree HEAD, remote branch or parked primary, its tree
+  id is compared with `origin/<default>`'s (`git rev-parse <tip>^{tree}` — the
+  same test `git diff --quiet origin/<default> <tip>` makes). Identical trees
+  mean identical content, however the commits were shaped, so the ref reads
+  `TREESAME` — `WT CONTAINED` too — and joins `MERGED`/`EQUIV`/`PRMERGED` in
+  the stale counts; `SUMMARY` also gains `tree-same-local` /
+  `tree-same-remote`, appended so no column moves. A tip holding anything the
+  default branch lacks has a different tree and never passes. Only the
+  current tip of the default branch is compared, so once it moves on the
+  branch reads `UNIQUE` again, and the playbook's manual check — the tip's
+  tree against every tree in the default branch's history — is the last
+  thing to rule out before shipping a `UNIQUE` branch. The skill and playbook
+  put `TREESAME` in the Safe bucket exactly like `EQUIV` — `branch -D`, a
+  clean unused worktree removable, a remote branch a per-item deletion
+  candidate — with one extra rule: **never open a pull request for it**,
+  GitHub would squash-merge an empty commit. A side effect: a freshly
+  squash-merged multi-commit branch with nothing landed since now reads
+  `TREESAME` from git alone, where it used to need `gh`. Covered by
+  `tests/test_sweep_scan.py`.
+  Why: a two-commit remote branch whose work had been pushed to the default
+  branch directly, as one combined commit with no pull request, scanned as
+  `UNIQUE(2)` — two patch-ids against one, and no PR to vouch — so it was
+  shipped as a PR and squash-merged, which landed an empty commit on the
+  default branch. `git diff --quiet` between the two would have been silent.
+
 ## [4.5.2] - 2026-09-11
 
 ### Changed
