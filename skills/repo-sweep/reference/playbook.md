@@ -61,13 +61,14 @@ so they are not forgotten, never `drop`/`clear`/`pop` unprompted.
 | `MERGED` | ancestor of `origin/<default>` | delete: `git -C <repo> branch -d <name>` |
 | `EQUIV` | every commit patch-equivalent upstream (`git cherry` shows no `+`) — the single-commit squash-merge signature | delete: `git -C <repo> branch -D <name>` (`-d` refuses: git cannot see a squash as merged; the scan's EQUIV **is** the proof) |
 | `PRMERGED(#N)` | pull request #N into the default branch is merged, its merge commit is on `origin/<default>`, and every non-merge commit on the branch is inside the PR's head (the tip **is** the head, is behind it, or only merges from the default branch follow it) — the multi-commit squash-merge `git cherry` cannot see; see *Merged-PR proof* below | delete: `git -C <repo> branch -D <name>` (same reasoning as `EQUIV`; quote the PR number in the plan) |
-| `UNIQUE(N)` | N commits whose content is nowhere on the default branch and that no merged PR vouches for | **never auto-delete.** Show them (`git -C <repo> cherry -v origin/<default> <name>` or `log --oneline origin/<default>..<name>`) and let the user decide: merge it, keep it, or explicitly discard. If the PR proof was off or unanswered for this repo, run the manual check under *Merged-PR proof* first |
+| `TREESAME` | the tip's tree is byte-identical to `origin/<default>`'s (`git diff --quiet origin/<default> <name>` is silent) — the same work landed on the default branch in a different commit shape: pushed there directly as one combined commit, with no PR, so patch-ids miss it and no PR record vouches for it; judged only after the three proofs above failed — see *Tree-identical proof* below | delete: `git -C <repo> branch -D <name>` (as for `EQUIV`). **Never open a PR for it**: the branch holds nothing the default branch lacks, so GitHub would squash-merge an empty commit |
+| `UNIQUE(N)` | N commits whose content is nowhere on the default branch, that no merged PR vouches for, and whose tip's tree differs from the default branch's | **never auto-delete.** Show them (`git -C <repo> cherry -v origin/<default> <name>` or `log --oneline origin/<default>..<name>`) and let the user decide: merge it, keep it, or explicitly discard. If the PR proof was off or unanswered for this repo, run the manual check under *Merged-PR proof* first; and before shipping it as a PR, rule out tree equality last — the one-liners under *Tree-identical proof*: a silent `git diff --quiet origin/<default> <name>` means delete, not ship |
 | `DEFAULT(behind=N)` | the default branch itself | never delete; if behind and not checked out: `git -C <repo> fetch origin <default>:<default>` (fast-forwards without a checkout) |
 
 Skip — whatever the state — any branch that is **checked out** somewhere
 (`CHECKEDOUT=yes`; remove/switch the checkout first) or has an **open PR**. Deleting a
 local branch touches nothing remote and stays recoverable via `git reflog` for ~90
-days, which is why `MERGED`/`EQUIV`/`PRMERGED` deletions may batch under one
+days, which is why `MERGED`/`EQUIV`/`PRMERGED`/`TREESAME` deletions may batch under one
 confirmation.
 
 ## Worktrees (the `WT` rows)
@@ -80,12 +81,14 @@ vanish). A worktree is removable when it is **clean** (`DIRTY=0`), **not in use*
 - `CONTAINED=EQUIV` or `CONTAINED=PRMERGED(#N)` — the scan proved the HEAD's content is
   there by patch-equivalence or by a merged pull request (a detached HEAD matches a PR
   by commit, so it needs no branch);
-- its branch is `MERGED`/`EQUIV`/`PRMERGED` in the `BRANCH` rows;
+- `CONTAINED=TREESAME` — the HEAD's tree is identical to the default branch's: its whole
+  content landed there in a different commit shape;
+- its branch is `MERGED`/`EQUIV`/`PRMERGED`/`TREESAME` in the `BRANCH` rows;
 - its branch's upstream is `gone` (deleted on the remote after a merge).
 
 ```bash
 git -C <repo> worktree remove <path>    # refuses if dirty — investigate, never --force
-git -C <repo> branch -d <branch>        # then its branch, -D if EQUIV or PRMERGED
+git -C <repo> branch -d <branch>        # then its branch, -D if EQUIV, PRMERGED or TREESAME
 git -C <repo> worktree prune            # drop stale admin entries (also for PRUNABLE=yes)
 ```
 
@@ -135,7 +138,7 @@ mv <orphan-dir> ~/.Trash/"$(basename <orphan-dir>)-$(date +%Y%m%d%H%M%S)"
 ## Parked primaries (the `PARKED` rows)
 
 A primary checkout left standing on a non-default branch. If that branch is
-`MERGED`/`EQUIV`/`PRMERGED` and the tree is clean: `git -C <repo> switch <default>` then
+`MERGED`/`EQUIV`/`PRMERGED`/`TREESAME` and the tree is clean: `git -C <repo> switch <default>` then
 `git -C <repo> pull --ff-only`, after which the old branch joins the prune list. If
 the branch is `UNIQUE` or has an open PR, leave it parked — just fast-forward the
 local default branch alongside: `git -C <repo> fetch origin <default>:<default>`. The
@@ -147,8 +150,10 @@ mid-task — leave it parked, list it under Skipped with the pid and command fro
 ## Remote branches (the `RBRANCH` rows)
 
 `STATE` uses the local vocabulary: `MERGED` (ancestor), `EQUIV` (patch-equivalent — a
-single-commit squash) and `PRMERGED(#N)` (a merged pull request vouches for it — the
-multi-commit squash) all mean the default branch already contains everything. Deleting
+single-commit squash), `PRMERGED(#N)` (a merged pull request vouches for it — the
+multi-commit squash) and `TREESAME` (the tip's tree is the default branch's — the work
+landed in a different commit shape, with no PR) all mean the default branch already
+contains everything. Deleting
 is **outward-facing** — irreversible for anyone else who fetched the branch — so list
 each candidate in the plan with its state (and PR number), check open PRs
 (`gh pr list --state open --json headRefName,number` — a PR head is never deleted;
@@ -159,8 +164,13 @@ inside the safe batch:
 git push origin --delete <branch>
 ```
 
+A `TREESAME` remote branch is a deletion candidate on the same terms — and never a pull
+request: merging one squashes an empty commit onto the default branch.
+
 `UNIQUE(N)` remote branches are decisions, not chores: show their age and unique
-commits and let the user choose. Never delete the default branch or `origin/HEAD`.
+commits and let the user choose — and before shipping one as a PR, run the tree check
+under *Tree-identical proof*: it is the last thing to rule out. Never delete the
+default branch or `origin/HEAD`.
 
 ## Merged-PR proof (how `PRMERGED` is computed)
 
@@ -196,6 +206,38 @@ git -C <repo> rev-list --count --no-merges origin/<default>..<name> ^<headRefOid
 ```
 
 - `--no-pr` turns the lookup off for a run (no `gh` calls at all).
+
+## Tree-identical proof (how `TREESAME` is computed)
+
+Patch-ids see a squash only when the branch had one commit, and the PR record sees a
+squash only when there was a pull request. Work that reached the default branch
+**directly, as one combined commit** — the same files, the same content, a different
+commit shape — defeats both: `git cherry` shows every commit as `+`, no PR vouches for
+it, and the branch reads `UNIQUE(N)` although nothing on it is unmerged. Shipping such a
+branch as a PR lands an **empty commit** on the default branch (GitHub squash-merges the
+zero diff). The scan closes this gap by comparing trees:
+
+- **The check**: `git rev-parse <tip>^{tree}` equals `git rev-parse origin/<default>^{tree}`
+  — exactly what `git diff --quiet origin/<default> <tip>` tests. Identical tree ids mean
+  identical content, whatever the commits look like, so the branch holds nothing the
+  default branch lacks.
+- **Order**: judged only after `MERGED`, `EQUIV` and `PRMERGED` have all failed, so a
+  stronger proof always wins the label; and a tip holding anything the default branch
+  lacks has a different tree, so it can never pass — `TREESAME` never fires on a branch
+  that is ahead in content.
+- **Limit**: only the **current tip** of `origin/<default>` is compared. Once the default
+  branch moves on, a branch whose content landed earlier reads `UNIQUE(N)` again — the
+  scan is exact, not historical. So before shipping a `UNIQUE` branch as a PR, the tree
+  check is the last thing to rule out, by hand:
+
+```bash
+git -C <repo> diff --quiet origin/<default> <name> && echo tree-same   # silent = nothing unique: delete, never PR
+git -C <repo> log --format=%T origin/<default> | grep -qx "$(git -C <repo> rev-parse '<name>^{tree}')" && echo landed-earlier   # its exact tree was the default branch's at some earlier commit
+```
+
+Either line printing means the branch's whole content has already been on the default
+branch: treat it as `TREESAME` — delete it (`branch -D`, or `push origin --delete` after
+a per-item confirmation) and do not open a pull request for it.
 
 ## Plugins
 

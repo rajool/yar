@@ -4,8 +4,10 @@
 # Discovers every local git repo under the scan roots and prints a typed,
 # tab-separated audit: per-checkout sync state (same table daily driving needs),
 # plus the sweep-specific facts -- local/remote branch staleness (squash-merge
-# aware, and backed by merged pull requests wherever `gh` can see them),
-# worktree containment, which checkouts a live process is standing in (one
+# aware, backed by merged pull requests wherever `gh` can see them, and by a
+# tip whose tree is identical to the default branch's: content that landed in
+# a different commit shape), worktree containment, which checkouts a live
+# process is standing in (one
 # lsof snapshot), orphaned worktree directories, a primary checkout parked off
 # the default branch, and plugin manifest version drift.
 #
@@ -50,6 +52,21 @@ older stays UNIQUE (conservative). Stale remote-tracking refs can only make
 the proof more conservative, never less: the PR's merge commit must already
 be an ancestor of the local origin/DEFAULT.
 
+Tree-identical proof (git only, always on): a tip that MERGED, EQUIV and
+PRMERGED all failed to prove is compared tree to tree with origin/DEFAULT
+(`git rev-parse TIP^{tree}` against `origin/DEFAULT^{tree}` -- the same
+comparison `git diff --quiet origin/DEFAULT TIP` makes). Identical trees mean
+the branch's whole content is on the default branch already, however the
+commits were shaped -- typically the same work pushed to DEFAULT directly as
+ONE combined commit, with no pull request, which patch-ids miss (two commits
+against one) and no PR record vouches for -- so the branch reads TREESAME: a
+prune candidate exactly like EQUIV, and never a PR (GitHub would squash-merge
+an empty commit). Only the current tip of origin/DEFAULT is compared, and a
+tip holding anything DEFAULT lacks never passes: once the default branch
+moves on, such a branch reads UNIQUE again, and the playbook's manual check
+(the tip's tree against every tree in origin/DEFAULT's history) is the last
+thing to rule out before shipping a UNIQUE branch.
+
 In-use probe (read-only, best-effort): ONE `lsof +c 0 -a -d cwd -Fpcn`
 snapshot per run lists every process the caller may inspect with its current
 working directory. A checkout some process is standing in -- another Claude
@@ -67,16 +84,17 @@ Row types (first column):
   WT       linked worktree sweep facts:
            WT REPO PATH HEAD CONTAINED DIRTY PRUNABLE INUSE
            (HEAD = branch name or DETACHED@sha; CONTAINED = proof that HEAD's
-            content is on origin/DEFAULT: yes = ancestor, EQUIV and
-            PRMERGED(#N) as for BRANCH (a detached HEAD matches a PR by
-            commit), no = unproven; PRUNABLE = git already lost the dir;
+            content is on origin/DEFAULT: yes = ancestor, EQUIV,
+            PRMERGED(#N) and TREESAME as for BRANCH (a detached HEAD matches
+            a PR by commit), no = unproven; PRUNABLE = git already lost the dir;
             INUSE = yes | no | ? -- a live process stands in it, see above)
   INUSE    one live process standing in the WT / ORPHAN / PARKED path just
            printed (only after INUSE=yes; CWD is its working directory):
            INUSE REPO PATH PID COMMAND CWD
   BRANCH   local branch classification:
            BRANCH REPO NAME STATE UPSTREAM CHECKEDOUT LASTCOMMIT
-           STATE: DEFAULT(behind=N) | MERGED | EQUIV | PRMERGED(#N) | UNIQUE(N)
+           STATE: DEFAULT(behind=N) | MERGED | EQUIV | PRMERGED(#N) | TREESAME
+                  | UNIQUE(N)
            (MERGED = ancestor of origin/DEFAULT; EQUIV = every commit is
             patch-equivalent to one already there -- the single-commit
             squash-merge signal; PRMERGED(#N) = pull request #N into DEFAULT
@@ -84,13 +102,23 @@ Row types (first column):
             non-merge commit on the branch is inside that PR's head -- the tip
             is the PR head, is behind it, or only merges from DEFAULT follow
             it -- the multi-commit squash-merge signal `git cherry` cannot see;
-            UNIQUE = N commits whose content is nowhere on origin/DEFAULT and
-            that no merged PR vouches for; UNIQUE(?) = the rev did not resolve)
+            TREESAME = the tip's tree is identical to origin/DEFAULT's tree
+            (`git diff --quiet origin/DEFAULT TIP` is silent): the whole
+            content is already there in a different commit shape -- the same
+            work pushed to DEFAULT directly as one combined commit, with no
+            pull request -- which neither patch-ids nor the PR record can see;
+            judged only after MERGED, EQUIV and PRMERGED failed, never when
+            the tip holds anything DEFAULT lacks, and never a PR: it would
+            squash to an EMPTY commit -- delete it instead;
+            UNIQUE = N commits whose content is nowhere on origin/DEFAULT, that
+            no merged PR vouches for, and whose tip's tree differs from
+            origin/DEFAULT's; UNIQUE(?) = the rev did not resolve)
   RBRANCH  remote branch classification, same STATE vocabulary minus DEFAULT:
            RBRANCH REPO NAME STATE LASTCOMMIT
-           (MERGED / EQUIV / PRMERGED(#N) = nothing on it that origin/DEFAULT
-            lacks -- deletion candidates the skill still checks for open PRs
-            and confirms one by one)
+           (MERGED / EQUIV / PRMERGED(#N) / TREESAME = nothing on it that
+            origin/DEFAULT lacks -- deletion candidates the skill still checks
+            for open PRs and confirms one by one; a TREESAME one is deleted,
+            never shipped)
   ORPHAN   directory under REPO/.claude/worktrees not registered as a
            worktree (typically left behind by a repo rename):
            ORPHAN REPO PATH GITDIR_TARGET REPAIRABLE SIZE_KB FILES INUSE
@@ -101,8 +129,9 @@ Row types (first column):
   NOREMOTE repo has no origin default branch to judge against; only the
            checkout row is emitted.
   SUMMARY  totals, last line. stale-local-branches / stale-remote-branches
-           count MERGED + EQUIV + PRMERGED; pr-merged-local / pr-merged-remote
-           count the PRMERGED share of those; pr-proof = off, or
+           count MERGED + EQUIV + PRMERGED + TREESAME; pr-merged-local /
+           pr-merged-remote count the PRMERGED share of those, tree-same-local
+           / tree-same-remote the TREESAME share; pr-proof = off, or
            QUERIED/GITHUB-REPOS (repos whose merged PRs were fetched, out of
            the repos with a GitHub-style origin); in-use counts the WT /
            ORPHAN / PARKED rows with INUSE=yes, or ? without a snapshot.
@@ -296,6 +325,7 @@ fi
 total_repos=0; total_wt=0; dirty_n=0; ahead_n=0; behind_n=0
 gone_n=0; stash_n=0; fetch_fail=0
 stale_local=0; stale_remote=0; pr_local=0; pr_remote=0
+tree_local=0; tree_remote=0; def_tree=""
 gh_repos_n=0; pr_repos_n=0
 orphan_n=0; parked_n=0; drift_n=0; inuse_n=0
 
@@ -433,11 +463,15 @@ EOF
 # Classify one rev against origin/<default>: MERGED (ancestor), EQUIV (every
 # commit patch-equivalent to one upstream -- how a single-commit squash-merge or
 # a re-landed branch looks), PRMERGED(#N) (a merged pull request vouches for it
-# -- the multi-commit squash-merge that defeats `git cherry`), or UNIQUE(N) (N
-# commits whose content is nowhere on the default branch). PRNAME is the head
-# ref name to look the PR up by: defaults to REV; pass "" to match by commit
-# only (a detached HEAD). A rev that does not resolve is UNIQUE(?) -- an
-# unreadable ref must never pass as proof. Sets $state.
+# -- the multi-commit squash-merge that defeats `git cherry`), TREESAME (the
+# tip's tree IS origin/<default>'s tree -- the same work landed there in a
+# different commit shape, typically pushed directly as one combined commit
+# with no PR, which the two proofs before it cannot see), or UNIQUE(N) (N
+# commits whose content is nowhere on the default branch). The proofs are
+# tried in that order, so TREESAME only fires where every other proof failed.
+# PRNAME is the head ref name to look the PR up by: defaults to REV; pass ""
+# to match by commit only (a detached HEAD). A rev that does not resolve is
+# UNIQUE(?) -- an unreadable ref must never pass as proof. Sets $state.
 classify_branch() {
   _repo="$1"; _rev="$2"; _def="$3"; _prname="${4-$2}"
   tip="$(git -C "$_repo" rev-parse --verify --quiet "$_rev^{commit}" 2>/dev/null)"
@@ -461,9 +495,19 @@ classify_branch() {
   pr_proof "$_repo" "$tip" "$_prname" "$_def"
   if [ -n "$pr_num" ]; then
     state="PRMERGED(#${pr_num})"
-  else
-    state="UNIQUE(${uniq_ct})"
+    return
   fi
+  # Tree-identical: identical tree ids mean identical content, whatever the
+  # commits look like -- the branch holds nothing origin/<default> lacks, and
+  # a PR of it would squash to an empty commit. Compared against the current
+  # tip of origin/<default> only ($def_tree, read once per repo), and an
+  # unreadable tree on either side never passes.
+  tip_tree="$(git -C "$_repo" rev-parse --verify --quiet "$tip^{tree}" 2>/dev/null)"
+  if [ -n "$def_tree" ] && [ -n "$tip_tree" ] && [ "$tip_tree" = "$def_tree" ]; then
+    state="TREESAME"
+    return
+  fi
+  state="UNIQUE(${uniq_ct})"
 }
 
 # Emit the sweep-specific rows for one repo (assumes fetch already happened).
@@ -484,6 +528,11 @@ sweep_repo() {
     printf 'NOREMOTE\t%s\n' "$repo"
     return
   fi
+
+  # The default branch's tree id, for the TREESAME proof in classify_branch:
+  # read once per repo; empty when unreadable, and an empty tree id proves
+  # nothing.
+  def_tree="$(git -C "$repo" rev-parse --verify --quiet "origin/$def^{tree}" 2>/dev/null)"
 
   # Merged pull requests into the default branch -- one gh call per repo,
   # consumed by every classification below (worktrees, branches, remote
@@ -509,12 +558,12 @@ sweep_repo() {
         head_desc="DETACHED@$(printf '%.7s' "$wt_head")"
       fi
       # CONTAINED is the proof that HEAD's content is on origin/<default>:
-      # yes (ancestor), EQUIV or PRMERGED(#N) as for branches (a detached HEAD
-      # can still match a merged PR by commit), no (unproven).
+      # yes (ancestor), EQUIV, PRMERGED(#N) or TREESAME as for branches (a
+      # detached HEAD can still match a merged PR by commit), no (unproven).
       classify_branch "$repo" "$wt_head" "$def" "$wt_branch"
       case "$state" in
         MERGED) contained="yes" ;;
-        EQUIV|PRMERGED*) contained="$state" ;;
+        EQUIV|PRMERGED*|TREESAME) contained="$state" ;;
         *) contained="no" ;;
       esac
       wt_dirty="$(git -C "$wt_path" status --porcelain 2>/dev/null | grep -c . || true)"
@@ -566,6 +615,7 @@ sweep_repo() {
       case "$state" in
         MERGED|EQUIV) stale_local=$((stale_local + 1)) ;;
         PRMERGED*) stale_local=$((stale_local + 1)); pr_local=$((pr_local + 1)) ;;
+        TREESAME) stale_local=$((stale_local + 1)); tree_local=$((tree_local + 1)) ;;
       esac
     fi
     printf 'BRANCH\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$b" "$state" "$upstate" "$co" "$date"
@@ -573,9 +623,10 @@ sweep_repo() {
              --format='%(refname:short)%09%(upstream:short)%09%(upstream:track)%09%(committerdate:short)' 2>/dev/null)
 
   # Remote branches other than the default, classified like local ones:
-  # MERGED / EQUIV / PRMERGED(#N) mean nothing on them that origin/<default>
-  # does not already have (deletion candidates -- the skill still checks for
-  # an open PR and confirms each one before proposing deletion).
+  # MERGED / EQUIV / PRMERGED(#N) / TREESAME mean nothing on them that
+  # origin/<default> does not already have (deletion candidates -- the skill
+  # still checks for an open PR and confirms each one before proposing
+  # deletion; a TREESAME one is never shipped as a PR).
   while IFS= read -r rline; do
     [ -z "$rline" ] && continue
     ref="${rline%%$'\t'*}"; date="${rline#*$'\t'}"
@@ -586,6 +637,7 @@ sweep_repo() {
     case "$state" in
       MERGED|EQUIV) stale_remote=$((stale_remote + 1)) ;;
       PRMERGED*) stale_remote=$((stale_remote + 1)); pr_remote=$((pr_remote + 1)) ;;
+      TREESAME) stale_remote=$((stale_remote + 1)); tree_remote=$((tree_remote + 1)) ;;
     esac
     printf 'RBRANCH\t%s\t%s\t%s\t%s\n' "$repo" "$rb" "$state" "$date"
   done < <(git -C "$repo" for-each-ref refs/remotes/origin \
@@ -709,6 +761,7 @@ else
   pr_proof_s="off"
 fi
 if [ "$INUSE_MODE" = "on" ]; then inuse_s="$inuse_n"; else inuse_s="?"; fi
-printf 'SUMMARY\trepos=%s\tworktrees=%s\tdirty=%s\tahead=%s\tbehind=%s\tgone=%s\twith-stashes=%s\tfetch-failures=%s\tstale-local-branches=%s\tstale-remote-branches=%s\tpr-merged-local=%s\tpr-merged-remote=%s\tpr-proof=%s\torphan-dirs=%s\tparked=%s\tin-use=%s\tmanifest-drift=%s\n' \
+printf 'SUMMARY\trepos=%s\tworktrees=%s\tdirty=%s\tahead=%s\tbehind=%s\tgone=%s\twith-stashes=%s\tfetch-failures=%s\tstale-local-branches=%s\tstale-remote-branches=%s\tpr-merged-local=%s\tpr-merged-remote=%s\tpr-proof=%s\torphan-dirs=%s\tparked=%s\tin-use=%s\tmanifest-drift=%s\ttree-same-local=%s\ttree-same-remote=%s\n' \
   "$total_repos" "$total_wt" "$dirty_n" "$ahead_n" "$behind_n" "$gone_n" "$stash_n" "$fetch_fail" \
-  "$stale_local" "$stale_remote" "$pr_local" "$pr_remote" "$pr_proof_s" "$orphan_n" "$parked_n" "$inuse_s" "$drift_n"
+  "$stale_local" "$stale_remote" "$pr_local" "$pr_remote" "$pr_proof_s" "$orphan_n" "$parked_n" "$inuse_s" "$drift_n" \
+  "$tree_local" "$tree_remote"

@@ -35,13 +35,17 @@ first run.
 The output is typed rows (the script's `--help` documents every column): per-checkout
 sync state (`repo`/`worktree`), worktree facts (`WT`, whose `CONTAINED` column is the
 proof that the HEAD's content is on the default branch: `yes` / `EQUIV` /
-`PRMERGED(#N)` / `no`, and whose `INUSE` column says whether a live process is standing
-in it: `yes` / `no` / `?`), local branch classification (`BRANCH`: `MERGED` = ancestor of
-the default branch, `EQUIV` = every commit patch-equivalent to one already there — how a
-single-commit squash-merge looks, `PRMERGED(#N)` = pull request #N into the default
-branch is merged and vouches for every commit on the branch — how a multi-commit
-squash-merge looks, which `git cherry` cannot see, `UNIQUE(N)` = N commits found nowhere
-else that no merged PR vouches for), remote branch classification (`RBRANCH`, same
+`PRMERGED(#N)` / `TREESAME` / `no`, and whose `INUSE` column says whether a live process
+is standing in it: `yes` / `no` / `?`), local branch classification (`BRANCH`: `MERGED` =
+ancestor of the default branch, `EQUIV` = every commit patch-equivalent to one already
+there — how a single-commit squash-merge looks, `PRMERGED(#N)` = pull request #N into the
+default branch is merged and vouches for every commit on the branch — how a multi-commit
+squash-merge looks, which `git cherry` cannot see, `TREESAME` = the tip's tree is
+identical to the default branch's tree — the same work landed there in a different
+commit shape (pushed directly as one combined commit, no PR), which neither patch-ids
+nor the PR record can see; judged only where the three proofs before it failed,
+`UNIQUE(N)` = N commits found nowhere else that no merged PR vouches for and whose tree
+differs from the default branch's), remote branch classification (`RBRANCH`, same
 vocabulary), orphaned worktree directories (`ORPHAN`), primaries parked off the default
 branch (`PARKED`), and plugin manifest drift (`PLUGDEV`). If `SUMMARY` shows
 `fetch-failures>0`, say so and treat those repos as read-only — stale refs must not
@@ -73,20 +77,26 @@ branch with an open PR is never stale, whatever the numbers say. (Merged PRs are
 consumed by the scan as `PRMERGED`; open PRs are still this step's job.)
 
 - **Safe** (batch; one confirmation covers them): push ahead-clean checkouts;
-  fast-forward behind-clean ones; delete local `MERGED`/`EQUIV`/`PRMERGED` branches
-  that are not checked out anywhere and have no open PR (quote the PR number next to a
-  `PRMERGED` branch so the proof is visible); remove clean worktrees whose `CONTAINED`
-  is `yes`/`EQUIV`/`PRMERGED` (or whose branch is `MERGED`/`EQUIV`/`PRMERGED`/
-  upstream-`gone`) **and whose `INUSE` is `no`**; switch a parked primary back to the
-  default branch when its current branch is `MERGED`/`EQUIV`/`PRMERGED`, the tree is
-  clean, and `INUSE` is `no`; update installed
-  plugins. Remote branches classified `MERGED`/`EQUIV`/`PRMERGED` with no open PR are
-  deletion candidates too, but deletion is outward-facing: list each one and confirm it
-  per item (step 3), never inside this batch.
+  fast-forward behind-clean ones; delete local `MERGED`/`EQUIV`/`PRMERGED`/`TREESAME`
+  branches that are not checked out anywhere and have no open PR (quote the PR number
+  next to a `PRMERGED` branch so the proof is visible); remove clean worktrees whose
+  `CONTAINED` is `yes`/`EQUIV`/`PRMERGED`/`TREESAME` (or whose branch is
+  `MERGED`/`EQUIV`/`PRMERGED`/`TREESAME`/upstream-`gone`) **and whose `INUSE` is
+  `no`**; switch a parked primary back to the default branch when its current branch is
+  `MERGED`/`EQUIV`/`PRMERGED`/`TREESAME`, the tree is clean, and `INUSE` is `no`; update
+  installed plugins. Remote branches classified `MERGED`/`EQUIV`/`PRMERGED`/`TREESAME`
+  with no open PR are deletion candidates too, but deletion is outward-facing: list each
+  one and confirm it per item (step 3), never inside this batch. `TREESAME` sits in this
+  bucket exactly like `EQUIV`, with one extra rule: **never open a PR for it** — the
+  branch holds nothing the default branch lacks, so GitHub would squash-merge an empty
+  commit.
 - **Needs you** (list, don't touch): dirty trees (name the files), `UNIQUE` branches
   (show the commits via `git cherry`; if `pr-proof` was off or that repo did not
-  answer, run the playbook's manual merged-PR check before calling the work unmerged),
-  stashes, detached primaries, diverged histories,
+  answer, run the playbook's manual merged-PR check before calling the work unmerged;
+  and before shipping one as a PR, the tree-equality check is the last thing to rule
+  out — `git -C <repo> diff --quiet origin/<default> <tip>` staying silent means nothing
+  on it is unique: delete it, never PR it; the playbook's *Tree-identical proof* has the
+  historical variant), stashes, detached primaries, diverged histories,
   orphaned worktree dirs (git cannot prove they hold no unsaved work — a human look
   first), any `WT`/`ORPHAN`/`PARKED` row with `INUSE=?` (the scan could not probe
   processes; the playbook's `lsof` one-liner checks by hand), and dev clones whose
@@ -111,8 +121,8 @@ Order matters: worktrees first (a branch checked out in a worktree cannot be del
 then local branches, then remote branches, then `git worktree prune`. A worktree with
 `INUSE=yes` is never removed, whatever its `CONTAINED` says — it stays listed under
 Skipped with its pid and command until that process is gone. Exact commands,
-the `-d`/`-D` rule (`-D` for `EQUIV` and `PRMERGED`: git itself cannot see a squash as
-merged — the scan's proof is what licenses it), the orphan-dir repair-or-trash protocol (`git worktree repair` when
+the `-d`/`-D` rule (`-D` for `EQUIV`, `PRMERGED` and `TREESAME`: git itself cannot see a
+squash or a re-shaped landing as merged — the scan's proof is what licenses it), the orphan-dir repair-or-trash protocol (`git worktree repair` when
 the admin dir survives; move to `~/.Trash` — never `rm -rf` — when it is dead), and the
 parked-primary recipe are in `reference/playbook.md`. Remote-branch deletion is
 outward-facing: list each one explicitly in the plan and delete only after the
@@ -162,9 +172,11 @@ claim.
 - **Never discard work.** No `reset --hard`, no `checkout -- <file>` over dirty files,
   no `stash drop`, no `worktree remove --force`, no deleting a branch with unique
   commits, no `rm -rf` on orphan dirs (`~/.Trash` keeps them recoverable).
-- Delete a branch only on proof its content is elsewhere: `MERGED`/`EQUIV`/`PRMERGED`
-  from the scan, local and remote alike — and never with an open PR. `UNIQUE` is never
-  deleted, and a merged PR the scan could not see is not a proof you may assume.
+- Delete a branch only on proof its content is elsewhere: `MERGED`/`EQUIV`/`PRMERGED`/
+  `TREESAME` from the scan, local and remote alike — and never with an open PR. `UNIQUE`
+  is never deleted, and a merged PR the scan could not see is not a proof you may
+  assume. A `TREESAME` branch is deleted, never shipped: a PR of it squashes to an empty
+  commit.
 - **Stage explicit paths only** (`git add -- <paths>`); the git-guard blocks bulk adds.
 - Skip the checkout the session is standing in, and every path another live process is
   standing in (`INUSE=yes`): never remove, trash, or switch it, whatever its merged-ness
@@ -180,6 +192,6 @@ claim.
   plugin loop), exact commands, offline handling, and how repo-sweep relates to
   git-workflow. **Read it before acting on any state that is not obvious.**
 - `scripts/sweep-scan.sh` — the read-only auditor producing the typed rows above;
-  `--help` documents roots, depth, the merged-PR proof (`--no-pr` skips it), the in-use
-  probe, and every column.
+  `--help` documents roots, depth, the merged-PR proof (`--no-pr` skips it), the
+  tree-identical proof, the in-use probe, and every column.
 - Relies on **`yar:git-workflow`** for per-repo mechanics (commits, rebases, conflicts).
