@@ -4,9 +4,14 @@ Mirrors the decision in ``git-guard.py`` ``main()``: split the command into
 segments, tokenize each, and ask ``git_reason``. Every case here maps to a line in
 the script's own docstring — the tests turn that documentation into executable specs.
 """
+import json
 import os
 import shlex
+import shutil
+import stat
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -88,11 +93,6 @@ if __name__ == "__main__":
 
 
 # ---- remote-branch deletion gate ---------------------------------------------------
-import json as _json
-import stat as _stat
-import subprocess as _sp
-import tempfile as _tmp
-
 _SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                        "scripts", "git-guard.py")
 _FAKE_GH = r'''#!/usr/bin/env bash
@@ -108,24 +108,23 @@ printf '{"state":"%s","number":14}\n' "$state"
 
 def _run_guard(cmd, gh_state=None):
     """Run git-guard.py as the PreToolUse hook would; return (exit code, stderr)."""
-    tmp = _tmp.mkdtemp(prefix="yar-gg-")
+    tmp = tempfile.mkdtemp(prefix="yar-gg-")
     try:
         bindir = os.path.join(tmp, "bin")
         os.makedirs(bindir)
         gh = os.path.join(bindir, "gh")
         with open(gh, "w") as fh:
             fh.write(_FAKE_GH)
-        os.chmod(gh, os.stat(gh).st_mode | _stat.S_IEXEC)
+        os.chmod(gh, os.stat(gh).st_mode | stat.S_IEXEC)
         env = dict(os.environ)
         env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
         if gh_state:
             env["FAKE_GH_STATE"] = gh_state
         payload = {"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": tmp}
-        p = _sp.run([sys.executable, _SCRIPT], input=_json.dumps(payload),
+        p = subprocess.run([sys.executable, _SCRIPT], input=json.dumps(payload),
                     capture_output=True, text=True, env=env)
         return p.returncode, p.stderr
     finally:
-        import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
 
