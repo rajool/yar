@@ -85,3 +85,85 @@ class AllowsExplicitStaging(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---- remote-branch deletion gate ---------------------------------------------------
+import json as _json
+import stat as _stat
+import subprocess as _sp
+import tempfile as _tmp
+
+_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "scripts", "git-guard.py")
+_FAKE_GH = r'''#!/usr/bin/env bash
+# fake gh for tests: `gh pr view <branch> --json state,number` answers from FAKE_GH_STATE.
+state="${FAKE_GH_STATE:-NONE}"
+case "$state" in
+  NONE) echo 'no pull requests found for branch "feat/x"' >&2; exit 1 ;;
+  FAIL) echo 'error connecting to api.github.com' >&2; exit 4 ;;
+esac
+printf '{"state":"%s","number":14}\n' "$state"
+'''
+
+
+def _run_guard(cmd, gh_state=None):
+    """Run git-guard.py as the PreToolUse hook would; return (exit code, stderr)."""
+    tmp = _tmp.mkdtemp(prefix="yar-gg-")
+    try:
+        bindir = os.path.join(tmp, "bin")
+        os.makedirs(bindir)
+        gh = os.path.join(bindir, "gh")
+        with open(gh, "w") as fh:
+            fh.write(_FAKE_GH)
+        os.chmod(gh, os.stat(gh).st_mode | _stat.S_IEXEC)
+        env = dict(os.environ)
+        env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
+        if gh_state:
+            env["FAKE_GH_STATE"] = gh_state
+        payload = {"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": tmp}
+        p = _sp.run([sys.executable, _SCRIPT], input=_json.dumps(payload),
+                    capture_output=True, text=True, env=env)
+        return p.returncode, p.stderr
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class BranchDeletionGate(unittest.TestCase):
+    def test_push_delete_target_recognizes_every_spelling(self):
+        for cmd in ("git push origin --delete feat/x", "git push --delete origin feat/x",
+                    "git push -d origin feat/x", "git push origin :feat/x",
+                    "git -C /some/repo push origin --delete feat/x",
+                    "git push -q origin --delete feat/x"):
+            self.assertEqual(gg.push_delete_target(shlex.split(cmd)), "feat/x", cmd)
+
+    def test_ordinary_pushes_are_not_deletions(self):
+        for cmd in ("git push origin feat/x", "git push -u origin HEAD",
+                    "git push --force-with-lease", "git push origin main:main",
+                    "git branch -D feat/x", "gh pr merge 14 --squash --delete-branch"):
+            self.assertIsNone(gg.push_delete_target(shlex.split(cmd)), cmd)
+
+    def test_delete_chained_to_merge_is_blocked_without_asking_gh(self):
+        rc, err = _run_guard("gh pr merge 14 --squash && git push origin --delete feat/x",
+                             gh_state="MERGED")
+        self.assertEqual(rc, 2)
+        self.assertIn("chained", err)
+        self.assertIn("MERGED", err)
+        rc, err = _run_guard("gh pr merge 14 --squash; git push origin :feat/x")
+        self.assertEqual(rc, 2)
+
+    def test_standalone_delete_is_blocked_while_the_pr_is_open(self):
+        rc, err = _run_guard("git push origin --delete feat/x", gh_state="OPEN")
+        self.assertEqual(rc, 2)
+        self.assertIn("still OPEN", err)
+        self.assertIn("#14", err)
+
+    def test_standalone_delete_is_allowed_once_merged_closed_or_without_pr(self):
+        for state in ("MERGED", "CLOSED", "NONE", "FAIL"):
+            rc, err = _run_guard("git push origin --delete feat/x", gh_state=state)
+            self.assertEqual((rc, err), (0, ""), state)
+
+    def test_merge_with_gh_delete_branch_flag_is_allowed(self):
+        # gh deletes the branch only after a successful merge -- that is the safe form
+        rc, err = _run_guard("gh pr merge 14 --squash --delete-branch", gh_state="OPEN")
+        self.assertEqual((rc, err), (0, ""))

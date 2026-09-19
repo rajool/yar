@@ -269,6 +269,54 @@ class HookFlow(unittest.TestCase):
         self.assertEqual(out["decision"], "block")
         self.assertIn("AFTER PR #42", out["reason"])
 
+    def test_contract_gates_the_delete_on_merged(self):
+        rc, out = self.sb.hook(self.sb.prompt("ship"))
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("SEPARATE command", ctx)
+        self.assertIn("git reset --hard origin/<default>", ctx)
+        self.assertIn("never from the old HEAD", ctx)
+        rc, out = self.sb.hook(self.sb.post("gh pr create --fill", PR_URL + "\n"))
+        nudge = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("--jq .state", nudge)
+        self.assertIn("only after MERGED", nudge)
+
+    def test_dead_pre_squash_commits_block_until_the_branch_is_reset(self):
+        head = self.sb.feature()                      # feat/x: f0.txt, one commit
+        # simulate the squash-merge on origin/main: same tree, a different commit
+        git(self.sb.repo, "switch", "-q", "main")
+        self.sb.write("f0.txt", "work 0\n")
+        git(self.sb.repo, "add", "f0.txt")
+        git(self.sb.repo, "commit", "-q", "-m", "feat: step 0 (#42)")
+        git(self.sb.repo, "push", "-q", "origin", "main")
+        git(self.sb.repo, "switch", "-q", "feat/x")
+        self.sb.arm()
+        rc, out = self.sb.hook(self.sb.stop(), {"FAKE_GH_STATE": "MERGED", "FAKE_GH_OID": head})
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("pre-squash", out["reason"])
+        self.assertIn("git branch -D feat/x", out["reason"])   # plain checkout, not a worktree
+        # the prescribed cleanup releases the guard
+        git(self.sb.repo, "switch", "-q", "main")
+        git(self.sb.repo, "branch", "-D", "feat/x")
+        rc, out = self.sb.hook(self.sb.stop(), {"FAKE_GH_STATE": "MERGED", "FAKE_GH_OID": head})
+        self.assertEqual((rc, out), (0, None))
+
+    def test_dead_commits_in_a_worktree_prescribe_a_reset(self):
+        head = self.sb.feature()
+        git(self.sb.repo, "switch", "-q", "main")
+        self.sb.write("f0.txt", "work 0\n")
+        git(self.sb.repo, "add", "f0.txt")
+        git(self.sb.repo, "commit", "-q", "-m", "feat: step 0 (#42)")
+        git(self.sb.repo, "push", "-q", "origin", "main")
+        wt = os.path.join(self.sb.tmp, "wt")
+        git(self.sb.repo, "worktree", "add", "-q", wt, "feat/x")
+        self.sb.arm()
+        rc, out = self.sb.hook(self.sb.stop(cwd=wt), {"FAKE_GH_STATE": "MERGED", "FAKE_GH_OID": head})
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("git reset --hard origin/main", out["reason"])
+        git(wt, "reset", "-q", "--hard", "origin/main")
+        rc, out = self.sb.hook(self.sb.stop(cwd=wt), {"FAKE_GH_STATE": "MERGED", "FAKE_GH_OID": head})
+        self.assertEqual((rc, out), (0, None))
+
     def test_default_branch_clean_releases(self):
         self.sb.arm()
         rc, out = self.sb.hook(self.sb.stop())

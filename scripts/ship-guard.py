@@ -11,7 +11,8 @@ small CLI. Hook mode reads the hook JSON on stdin and never crashes a session
                      nudge, right there, that the job is not finished.
   Stop               While armed: check reality with git + gh. A recorded PR that is not
                      MERGED, a branch whose commits are in no merged PR, unpushed
-                     commits, or a ship request that produced nothing at all -> refuse
+                     commits, a branch left on dead pre-squash commits after its PR
+                     merged, or a ship request that produced nothing at all -> refuse
                      to end the turn (``decision: block``) with the exact next commands.
                      At most MAX_BLOCKS times per ship request; then the turn may end.
 
@@ -227,8 +228,8 @@ def default_branch(root):
     return "main"
 
 
-def count_commits(root, rng):
-    out = git(root, "rev-list", "--count", rng)
+def count_commits(root, *revs):
+    out = git(root, "rev-list", "--count", *revs)
     try:
         return int(out)
     except (TypeError, ValueError):
@@ -264,14 +265,18 @@ def gh_pr(cwd, ref=None):
 
 # ---- assessment -----------------------------------------------------------------
 
-def merge_commands(number, head_branch):
-    n = str(number) if number else ""
+def merge_commands(number, head_branch, default="main"):
+    n = (str(number) + " ") if number else ""
     b = head_branch or "<branch>"
-    return ("gh pr merge {n} --squash --delete-branch\n"
-            "        inside a worktree: gh pr merge {n} --squash && git push origin --delete {b}\n"
-            "        checks still running: gh pr merge {n} --squash --auto && gh pr checks {n} --watch\n"
-            "        then verify: gh pr view {n} --json state   -> must print MERGED"
-            ).format(n=n, b=b).replace("merge  --", "merge --").replace("checks  --", "checks --")
+    return ("gh pr merge {n}--squash --delete-branch\n"
+            "        inside a worktree: gh pr merge {n}--squash   (no --delete-branch there)\n"
+            "        checks still running: gh pr merge {n}--squash --auto && gh pr checks {n}--watch\n"
+            "        then verify: gh pr view {n}--json state --jq .state   -> must print MERGED\n"
+            "        only after MERGED, as a SEPARATE command (never chained to the merge): "
+            "git push origin --delete {b}\n"
+            "        then park the worktree: git fetch origin && git reset --hard origin/{d}   "
+            "(the squash left it on dead commits; the tree is identical, nothing is lost)"
+            ).format(n=n, b=b, d=default).replace("checks --watch", "checks --watch")
 
 
 def open_issue(info):
@@ -288,8 +293,45 @@ def open_issue(info):
 
 def closed_issue(info):
     num = info.get("number")
-    return ("PR #{} ({}) was CLOSED without merging.\n      -> gh pr reopen {} && {}"
-            .format(num, info.get("url"), num, merge_commands(num, info.get("headRefName"))))
+    return ("PR #{n} ({u}) was CLOSED without merging (GitHub closes a PR by itself when its head "
+            "branch is deleted).\n      -> branch still on origin: gh pr reopen {n} && {m}\n"
+            "      -> branch gone: git fetch origin && git rebase origin/<default> && git push -u origin HEAD, "
+            "then gh pr reopen {n} (or gh pr create --fill if reopen is refused), then merge and verify MERGED"
+            .format(n=num, u=info.get("url"), m=merge_commands(num, info.get("headRefName"))))
+
+
+def is_worktree(root):
+    gd = git(root, "rev-parse", "--git-dir")
+    cd = git(root, "rev-parse", "--git-common-dir")
+    if not gd or not cd:
+        return False
+    return os.path.realpath(os.path.join(root, gd)) != os.path.realpath(os.path.join(root, cd))
+
+
+def squashed_leftover(root, default):
+    """After a squash-merge the branch's commits are no ancestors of origin/<default> although
+    the tree is identical. Return how many such dead commits HEAD carries, else 0 (fail-open)."""
+    run(["git", "-C", root, "fetch", "--quiet", "origin", default])   # best effort, may be offline
+    base = "origin/" + default
+    rc, _, _ = run(["git", "-C", root, "merge-base", "--is-ancestor", "HEAD", base])
+    if rc == 0:
+        return 0            # HEAD is in the default branch's history (merge commit / fast-forward)
+    rc, _, _ = run(["git", "-C", root, "diff", "--quiet", base, "HEAD"])
+    if rc != 0:
+        return 0            # trees differ: real content is missing (other checks report that)
+    return count_commits(root, base + "..HEAD") or 0
+
+
+def leftover_issue(root, branch, default, k):
+    if is_worktree(root):
+        fix = ("git fetch origin && git reset --hard origin/{d}   (worktree: the tree already equals "
+               "origin/{d}, nothing is lost)".format(d=default))
+    else:
+        fix = "git switch {d} && git pull --ff-only && git branch -D {b}".format(d=default, b=branch)
+    return ("PR merged, but {b} still carries {k} pre-squash commit(s) that origin/{d} does not have "
+            "by SHA -- the checkout looks like unmerged work (a phantom \"Create PR\"), and a branch "
+            "started from here would drag duplicate commits and conflicts into the next PR.\n"
+            "      -> {fix}").format(b=branch, k=k, d=default, fix=fix)
 
 
 def assess(cwd, marker):
@@ -359,14 +401,21 @@ def assess(cwd, marker):
                         notes.append("PR #{} for {} is merged".format(num, branch))
                     head = git(root, "rev-parse", "HEAD")
                     oid = info.get("headRefOid")
+                    k = 0
                     if head and oid and head != oid:
-                        k = count_commits(root, "{}..HEAD".format(oid))
+                        # commits after the PR head that origin/<default> does not have either --
+                        # a branch parked on origin/<default> after a squash has none
+                        k = count_commits(root, "HEAD", "^" + oid, "^origin/" + default) or 0
                         if k:
                             issues.append(
                                 "{k} commit(s) on {b} were made AFTER PR #{p} merged -- they are "
                                 "not on {d}.\n      -> git push -u origin HEAD && gh pr create --fill "
                                 "&& gh pr merge --squash --delete-branch"
                                 .format(k=k, b=branch, p=num, d=default))
+                    if not k:
+                        dead = squashed_leftover(root, default)
+                        if dead:
+                            issues.append(leftover_issue(root, branch, default, dead))
                 elif st == "OPEN":
                     if num not in seen:
                         issues.append(open_issue(info))
@@ -423,9 +472,17 @@ def contract_text(path):
         "  1. commit this session's own files (explicit paths: git commit -m \"type(scope): ...\" -- <paths>)\n"
         "  2. git push -u origin HEAD\n"
         "  3. gh pr create --fill\n"
-        "  4. gh pr merge --squash --delete-branch   (inside a worktree: gh pr merge --squash, then "
-        "git push origin --delete <branch>; checks pending: add --auto, then gh pr checks --watch)\n"
-        "  5. gh pr view --json state  -> MERGED. Only then say \"shipped\".\n"
+        "  4. gh pr merge --squash --delete-branch   (inside a worktree: gh pr merge --squash, WITHOUT "
+        "--delete-branch; checks pending: add --auto, then gh pr checks --watch)\n"
+        "  5. gh pr view --json state --jq .state  -> MERGED. Only then say \"shipped\".\n"
+        "  6. only after MERGED, in a SEPARATE command -- never chained to the merge (git-guard blocks that "
+        "chain: a failed merge would still delete the branch and GitHub closes the PR unmerged): inside a "
+        "worktree git push origin --delete <branch>, then git fetch origin && git reset --hard "
+        "origin/<default> (the squash left the worktree on dead commits; the tree is identical, nothing is "
+        "lost).\n"
+        "  Next task after a squash-merge starts from origin/<default> (git fetch origin && git switch -C "
+        "<new-branch> origin/<default>), never from the old HEAD: its pre-squash commits ride along as "
+        "duplicates and the next PR conflicts.\n"
         "\"PR opened\", \"ready to merge\", \"left for you to merge\" are NOT shipped -- that is the "
         "failure this guard exists for. The merge is pre-authorized by the word \"ship\": never ask "
         "\"shall I merge?\". A Stop hook will refuse to end this turn while a PR from this session is "
@@ -492,9 +549,12 @@ def handle_post_tool(data):
             "ship-guard: PR {tag}created -- this is the MIDDLE of \"ship\", not the end. Next, in "
             "this same turn:\n"
             "  gh pr merge {n} --squash --delete-branch   (inside a worktree: gh pr merge {n} "
-            "--squash, then git push origin --delete <branch>)\n"
-            "  gh pr view {n} --json state               -> must print MERGED before you say "
-            "\"shipped\".").format(tag="#" + n + " " if n else "", n=n).replace("merge  --", "merge --")
+            "--squash, no --delete-branch)\n"
+            "  gh pr view {n} --json state --jq .state     -> must print MERGED before you say "
+            "\"shipped\".\n"
+            "  only after MERGED, as a separate command: git push origin --delete <branch> (worktree), "
+            "then git fetch origin && git reset --hard origin/<default>."
+            ).format(tag="#" + n + " " if n else "", n=n).replace("merge  --", "merge --")
             .replace("view  --", "view --")}})
 
 

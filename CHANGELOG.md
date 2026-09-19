@@ -10,6 +10,50 @@ only when it is bumped.
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-09-18
+
+### Added
+
+- **`git-guard`: a remote branch is deleted only once its pull request is merged.**
+  `git push <remote> --delete <branch>` (also `-d`, and the `:<branch>` refspec) is
+  blocked (exit 2) in two situations. Chained in the same command as `gh pr merge`
+  — the failure this release exists for: the merge was refused (the branch still
+  carried a squash-merged commit and GitHub saw a conflict), the unconditional
+  `&& git push origin --delete` ran anyway, and GitHub closed the open PR the
+  moment its head branch disappeared; the work had to be rebased and merged as a
+  new PR. And standing alone while `gh pr view <branch>` reports the PR `OPEN`.
+  `MERGED`, `CLOSED`, no PR, or an unreachable `gh` → allowed (fail-open, as
+  every guard). `gh pr merge --squash --delete-branch` is untouched — `gh` deletes
+  only after a successful merge. `GIT_GUARD=off` bypass unchanged.
+- **`ship-guard`: the contract gates the delete on `MERGED` and parks the worktree
+  afterwards.** The prompt contract, the post-`gh pr create` nudge and the block
+  messages now spell the chain as: merge → `gh pr view N --json state --jq .state`
+  = `MERGED` → only then, as a *separate* command, `git push origin --delete
+  <branch>` → `git fetch origin && git reset --hard origin/<default>` inside a
+  worktree (the squash left it on dead commits; the tree is identical). They also
+  say where the next task starts: `origin/<default>`, never the old HEAD. The
+  `Stop` hook gains a matching check — PR `MERGED`, nothing committed after it,
+  HEAD not an ancestor of `origin/<default>` yet tree-identical (a squash) → the
+  branch sits on dead pre-squash commits, which read as unmerged work (a phantom
+  "Create PR" in the desktop app) and would duplicate into the next PR → block,
+  with the exact fix: `reset --hard origin/<default>` in a worktree, `switch` /
+  `pull --ff-only` / `branch -D` in the main checkout. The check fetches first
+  and fails open offline.
+
+### Changed
+
+- **`git-workflow` skill and `reference/worktrees.md`:** the ship chain shows the
+  worktree variant as separate, gated steps (no `--delete-branch` there; delete
+  and reset only after `MERGED`), §1 gains "next task in an existing worktree:
+  `git switch -C <branch> origin/main`", and the cleanup sections cover keeping a
+  worktree (reset it) as well as removing it.
+
+### Fixed
+
+- `ship-guard`'s CLOSED-PR guidance covers the deleted-head-branch case: reopen
+  when the branch is still on origin; otherwise rebase on `origin/<default>`,
+  push, and reopen or open a new PR.
+
 ## [4.6.0] - 2026-09-16
 
 ### Added
