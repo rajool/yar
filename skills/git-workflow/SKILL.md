@@ -28,6 +28,10 @@ Only when you're certain you're the sole session in this folder is a plain branc
 git switch main && git pull --rebase        # start from the latest main
 git switch -c feat/donation-receipts        # your own short-lived branch
 ```
+**Next task in a worktree you already have (after its PR squash-merged):** start from `origin/main`, never from the old HEAD — a squash-merge rewrites your commits into one new commit on `main`, so the old ones still sit on the worktree branch and would ride along as duplicates (GitHub then reports conflicts on the next PR — this happened):
+```bash
+git fetch origin && git switch -C feat/<next-task> origin/main   # -C: reuse or move the branch onto fresh main
+```
 Worktree details (`.worktreeinclude` for `.env`/keys, rebase-not-merge, cleanup) → `reference/worktrees.md`.
 
 ## 2) While working — small, frequent commits
@@ -55,8 +59,13 @@ git commit -m "feat(finance): add donation receipt template" -- path/to/file ano
 git push -u origin HEAD                      # 1. push the branch up
 gh pr create --fill                          # 2. or with a custom title/body
 gh pr merge --squash --delete-branch         # 3. merge it yourself — no approval needed
-                                             #    (inside a worktree, see the note below)
-gh pr view --json state,url                  # 4. confirm state == MERGED, then report
+                                             #    (inside a worktree: gh pr merge --squash, WITHOUT --delete-branch)
+gh pr view --json state --jq .state          # 4. must print MERGED — only then report "shipped"
+```
+Inside a worktree, two more steps **after** step 4 prints `MERGED`, each as its own command:
+```bash
+git push origin --delete <branch>            # 5. delete the remote branch — only now (git-guard refuses it while the PR is OPEN or when it is chained to the merge)
+git fetch origin && git reset --hard origin/main   # 6. park the worktree on fresh main — the squash left it on dead commits; the tree is identical, nothing is lost
 ```
 
 - **The word "shipped" is reserved for `state == MERGED`.** "PR opened", "ready to merge", "mergeable and clean", "left for you to merge" are *not* shipped — they are the failure this rule exists to prevent. If the last command you ran was `gh pr create`, you are not finished: run step 3, then step 4.
@@ -65,7 +74,7 @@ gh pr view --json state,url                  # 4. confirm state == MERGED, then 
 - **No required approval:** everyone squash-merges their **own** PR. Others' review is welcome but never a blocker.
 - **Why squash:** each PR becomes one clean commit on `main`; history stays readable.
 - Before merging, make sure the branch is up to date with `main` (step 2) so the merge is conflict-free.
-- **Merging from inside a worktree?** `--delete-branch` errors there (it tries to check out `main`, which is checked out in the main folder) and can leave the remote branch behind. Use `gh pr merge --squash` then `git push origin --delete <branch>`.
+- **Merging from inside a worktree?** `--delete-branch` errors there (it tries to check out `main`, which is checked out in the main folder) and can leave the remote branch behind. Use `gh pr merge --squash`, verify `MERGED`, and only then `git push origin --delete <branch>` — **as a separate command, never `gh pr merge … && git push origin --delete …`**: if the merge fails (conflict, pending checks) the delete still runs, and GitHub closes the open PR unmerged the moment its head branch disappears. `git-guard` blocks that chain, and blocks a standalone delete while the PR is still `OPEN`. Then `git fetch origin && git reset --hard origin/main` so the worktree does not keep the dead pre-squash commits (`ship-guard` refuses to end the turn while it does — they show up as a phantom "Create PR" and would duplicate into the next PR).
 - **Protected base branch?** If required checks block an immediate merge, use `gh pr merge --squash --auto` — it merges on its own once checks pass; do the cleanup after it lands.
 - **The merge ends the worktree's job — offer cleanup now.** If this task ran in its own worktree, ask right after the merge lands: "merged — done with this task? I'll remove the worktree and the local branch." On yes → step 4. Skipping this moment is how stale worktrees pile up.
 
@@ -81,6 +90,7 @@ cd <main-checkout> && git pull --rebase
 git worktree remove <path-to-worktree>       # refuses if the worktree is dirty — investigate, don't --force
 git branch -D <branch>
 ```
+Keeping the worktree for the next task instead? Park it on fresh `main` first — `git fetch origin && git reset --hard origin/main` — and start the next branch from there (§1). A worktree left on its squash-merged commits looks like unmerged work and seeds duplicate commits.
 **Sweep — on "clean up worktrees":** when stale worktrees piled up anyway, run `git fetch --prune origin`, then `git worktree list` + `git branch -vv`: every worktree whose branch's upstream says `gone` was merged and deleted on the remote → remove it as above (a squash-merge is why `git branch --merged` finds nothing). Skip — and report — dirty worktrees, never-pushed branches (no upstream = work in progress), and the worktree you are standing in. Finish with `git worktree prune`. Full recipe → `reference/worktrees.md`.
 
 ## 5) Untangling (summary — details and safe commands in `reference/recipes.md`)
@@ -91,7 +101,7 @@ git branch -D <branch>
 ## Guardrails
 - `main` is sacred — real work on a branch + PR; never directly on `main`.
 - **One worktree per session** whenever you can't be certain you're the only session in this folder — a shared checkout means a shared index, and that is what cross-contaminates commits. A branch isolates history; a worktree isolates the index/files.
-- The bundled hooks stay in place: no `git add -A`/`commit -a` (git-guard), no edits on `main` (branch-guard), no binaries/secrets (pre-commit), no ending a turn mid-ship (ship-guard). Binary → external storage (not git), secret → `.env` (gitignored). Rare overrides: `GIT_GUARD=off`, `BRANCH_GUARD=off`, `SHIP_GUARD=off`, or `git commit --no-verify`.
+- The bundled hooks stay in place: no `git add -A`/`commit -a` and no remote-branch deletion while its PR is `OPEN` or chained to the merge (git-guard), no edits on `main` (branch-guard), no binaries/secrets (pre-commit), no ending a turn mid-ship or on dead pre-squash commits (ship-guard). Binary → external storage (not git), secret → `.env` (gitignored). Rare overrides: `GIT_GUARD=off`, `BRANCH_GUARD=off`, `SHIP_GUARD=off`, or `git commit --no-verify`.
 - Stage only this session's own files with explicit paths, **commit by pathspec** (`git commit -m "…" -- <paths>`), and **verify ownership before each commit** (`git diff --cached --name-only`): commit only files you changed this session; leave any other session's changes — staged or unstaged — exactly as they are. In an isolated worktree the collision risk is zero (these pass trivially); they matter most when sessions **share one checkout**.
 - **Invoke-only:** this skill does not branch, push, open, or merge a PR on its own — it runs the steps when you ask. When the ask is "ship", the whole of step 3 — squash-merge included — is what was invoked; don't re-confirm the merge separately. The `ship-guard` hooks enforce exactly that: they never start a ship, they only refuse to end one early.
 

@@ -46,15 +46,17 @@ Why: merge creates a "merge commit" that branches the history and makes reading 
 As soon as the PR merges, the worktree has done its job — remove it, or it joins the pile. **Right after a merge, offer this cleanup before moving on.** Two gotchas:
 
 - **Never remove the worktree you are standing in** — the directory disappears under your shell and the cwd dies. `cd` to the main checkout first.
-- **`gh pr merge --delete-branch` misbehaves inside a worktree**: after merging it tries to check out `main`, which is already checked out in the main folder, so it errors and can leave the remote branch behind. Prefer `gh pr merge --squash` followed by deleting the remote branch yourself.
+- **`gh pr merge --delete-branch` misbehaves inside a worktree**: after merging it tries to check out `main`, which is already checked out in the main folder, so it errors and can leave the remote branch behind. Prefer `gh pr merge --squash` followed by deleting the remote branch yourself — **only after `gh pr view <N> --json state --jq .state` prints `MERGED`, and as a separate command.** Chained as `gh pr merge … && git push origin --delete …`, a merge that fails (conflict, pending checks) still deletes the branch, and GitHub closes the open PR unmerged. `git-guard` blocks that chain and any delete while the PR is `OPEN`.
 
 ```bash
+gh pr view <N> --json state --jq .state   # MERGED — the gate for everything below
 cd <main-checkout>
 git push origin --delete <branch>     # only if the remote branch is still there
 git worktree remove <path>            # refuses if the worktree is dirty — investigate, don't --force
 git branch -D <branch>                # -D: after a squash-merge git cannot tell the branch is merged
 git worktree prune                    # clear out dead entries
 ```
+Keeping the worktree for the next task? Then instead of removing it: `git fetch origin && git reset --hard origin/main` inside it, and branch the next task from there (`git switch -C feat/<next> origin/main`). The squash left the worktree on commits `main` does not have by SHA — identical tree, dead history — which reads as unmerged work and would duplicate into the next PR. `ship-guard` refuses to end a ship turn while a merged branch still sits on them.
 
 ## Sweeping merged worktrees ("clean up worktrees")
 When worktrees piled up anyway, remove every one whose work already landed on `main`:

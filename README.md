@@ -142,7 +142,7 @@ yar carries a safety policy into **every** project that enables it: fewer prompt
 
 | Guard | Type | Auto-active? | What it blocks |
 |---|---|:--:|---|
-| `git-guard` | PreToolUse(Bash) hook | ✅ | `git add -A` / `.` / `-u` / `-f` and `git commit -a`. |
+| `git-guard` | PreToolUse(Bash) hook | ✅ | `git add -A` / `.` / `-u` / `-f` and `git commit -a`; deleting a remote branch while its PR is still `OPEN`, or chained to `gh pr merge` in the same command (a failed merge would still delete the branch and GitHub closes the PR unmerged). |
 | `branch-guard` | PreToolUse(Edit\|Write) hook | ✅ | Editing files while on `main` — nudges you to branch first. |
 | `perms-guard` | PreToolUse(Bash) hook | ✅ | Force-recursive deletes — `rm -rf` (incl. `sudo` and combined flags) and `docker rm -f`. |
 | `ship-guard` | UserPromptSubmit + PostToolUse(Bash) + Stop hooks | ✅ | Ending the turn while a requested "ship" is unfinished — after you say "ship", the turn cannot end until the PR is `MERGED` (unpushed commits, commits with no PR, an open PR, or nothing committed all count as unfinished), unless the guard is released with a stated reason. Verifies with `gh pr view` + `git`; fails open offline. |
